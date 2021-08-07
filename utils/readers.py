@@ -284,7 +284,7 @@ def getATL07data(fileT, numpy=False, beamNum=1, maxElev=1e6):
     
     if numpy:
         # list the variables you want to output here..
-        return along_track_dist, elev
+        return along_track_distance, elev
     
     else:
         dF = pd.DataFrame({'elev':elev, 'lons':lons, 'lats':lats, 'ssh_flag':ssh_flag,
@@ -294,11 +294,11 @@ def getATL07data(fileT, numpy=False, beamNum=1, maxElev=1e6):
                            'height_segment_id':height_segment_id, 
                            'photon_rate':photon_rate,'background_rate':background_rate,
                           'datetime':tiso, 'mss': mss, 'seg_length':seg_length})
-        
+
          # Add the datetime string
         #dFtimepd=pd.to_datetime(dFtime)
         #dF['datetime'] = pd.Series(dFtimepd, index=dF.index)
-        
+
         # Filter out high elevation values 
         dF = dF[(dF['elev']<maxElev)]
         # Reset row indexing
@@ -375,3 +375,4 @@ def getATL10data(fileT, beam='gt1r', minFreeboard=0, maxFreeboard=10):
     dF=dF.reset_index(drop=True)
 
     return dF
+

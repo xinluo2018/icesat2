@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# 1. read the atl06 data, 2. filter the altl06 data
+
 """
 Read ICESat-2 ATL06 data into single track format.
 Reads the ATL06 file format and outputs separate files for each beam pair
@@ -9,8 +11,7 @@ flag, pass the segmentation filter (2 m tolerance) and are located inside the
 ROI, defined by either a mask or a bounding box.
 Mask can be passed as either a ".tif" file or ".h5" file containing 0 (off)
 or 1 (on) masking values. If hdf5 used please use (X Y Z) as variable names,
-as they are
-hardcoded.
+as they are hardcoded.
 User can provide a blacklist (".txt" file) of ATL06 file names that should
 not be processed.
 Notes:
@@ -27,9 +28,9 @@ Example:
     python readatl06.py ./input/path/*.h5 -o /output/path/dir -f mask.tif \
     -p 3031 -i 100 -g 10 11 12 -n 4
 """
+
 import os
 import argparse
-
 import h5py
 import pyproj
 import numpy as np
@@ -40,23 +41,24 @@ from astropy.time import Time
 from scipy.ndimage import map_coordinates
 
 
+
 def segment_diff_filter(dh_fit_dx, h_li, tol=2):
     """ Coded by Ben Smith @ University of Washington """
-    dAT = 20.0
+    dAT = 20.0  # distance between the neighbor segments centers
 
     if h_li.shape[0] < 3:
         mask = np.ones_like(h_li, dtype=bool)
 
         return mask
 
-    EPplus = h_li + dAT * dh_fit_dx
-    EPminus = h_li - dAT * dh_fit_dx
+    EPplus = h_li + dAT * dh_fit_dx     # height of segment head, estimated
+    EPminus = h_li - dAT * dh_fit_dx    # height of segment tail, estimated
 
     segDiff = np.zeros_like(h_li)
-    segDiff[0:-1] = np.abs(EPplus[0:-1] - h_li[1:])
-    segDiff[1:] = np.maximum(segDiff[1:], np.abs(h_li[0:-1] - EPminus[1:]))
+    segDiff[0:-1] = np.abs(EPplus[0:-1] - h_li[1:])  # diff between the segment tail and the next segment
+    segDiff[1:] = np.maximum(segDiff[1:], np.abs(h_li[0:-1] - EPminus[1:])) 
 
-    mask = segDiff < tol
+    mask = segDiff < tol    # selected the segments which meet the segDiff < tol
 
     return mask
 
@@ -69,30 +71,23 @@ def gps2dyr(time):
     return time
 
 
-def list_files(path, endswith=".h5"):
-    """ List files in dir recursively."""
 
-    return [
-        os.path.join(dpath, f)
-
-        for dpath, dnames, fnames in os.walk(path)
-
-        for f in fnames
-
-        if f.endswith(endswith)
-    ]
-
-
-def transform_coord(proj1, proj2, x, y):
-    """Transform coordinates from proj1 to proj2 (EPSG num)."""
-
-    # Set full EPSG projection strings
-    proj1 = pyproj.Proj("+init=EPSG:" + proj1)
-    proj2 = pyproj.Proj("+init=EPSG:" + proj2)
-    return pyproj.transform(proj1, proj2, x, y)
+def coor2coor(srs_from, srs_to, x, y):
+    """
+    Transform coordinates from srs_from to srs_to
+    input:
+        srs_from and srs_to are EPSG number (e.g., 4326, 3031)
+        x and y are x-coord and y-coord corresponding to srs_from and srs_to    
+    return:
+        x-coord and y-coord in srs_to 
+    """
+    srs_from = pyproj.Proj(int(srs_from))
+    srs_to = pyproj.Proj(int(srs_to))
+    return pyproj.transform(srs_from, srs_to, x, y, always_xy=True)
 
 
 def track_type(time, lat, tmax=1):
+
     """ Determines ascending and descending tracks.
     Defines unique tracks as segments with time breaks > tmax,
     and tests whether lat increases or decreases w/time.
@@ -101,14 +96,13 @@ def track_type(time, lat, tmax=1):
     # Generate track segment
     tracks = np.zeros(lat.shape)
 
-    # Set values for segment
+    # Set values for segment, !!max: the potential turn point of the track
     tracks[0: np.argmax(np.abs(lat))] = 1
 
     # Output index array
     i_asc = np.zeros(tracks.shape, dtype=bool)
 
-    # Loop trough individual tracks
-
+    # Loop trough individual tracks, np.unique(tracks):[0,1]
     for track in np.unique(tracks):
 
         # Get all points from an individual track
@@ -135,7 +129,9 @@ def track_type(time, lat, tmax=1):
 
 
 def read_gtif(ifile, metaData):
-    """Read raster from file."""
+    """Read raster from file.
+    return: x-proj, y-proj, num_band, x-resolution, y-resolution, projection
+    """
 
     file = gdal.Open(ifile, gdal.GA_ReadOnly)
 
@@ -152,7 +148,7 @@ def read_gtif(ifile, metaData):
     dx = trans[1]
     dy = trans[5]
 
-    if metaData == "A":
+    if metaData == "A":   # convert image xy to projection xy(center of the pixel)
 
         xp = np.arange(Nx)
         yp = np.arange(Ny)
@@ -161,17 +157,17 @@ def read_gtif(ifile, metaData):
 
         X = (
             trans[0] + (Xp + 0.5) * trans[1] + (Yp + 0.5) * trans[2]
-        )  # FIXME: bottleneck!
+        )   # FIXME: bottleneck!
         Y = trans[3] + (Xp + 0.5) * trans[4] + (Yp + 0.5) * trans[5]
 
-    if metaData == "P":
+    if metaData == "P":   # convert image xy to projection xy (left up of the pixel)
 
         xp = np.arange(Nx)
         yp = np.arange(Ny)
 
         (Xp, Yp) = np.meshgrid(xp, yp)
 
-        X = trans[0] + Xp * trans[1] + Yp * trans[2]  # FIXME: bottleneck!
+        X = trans[0] + Xp * trans[1] + Yp * trans[2]    # FIXME: bottleneck!
         Y = trans[3] + Xp * trans[4] + Yp * trans[5]
 
     band = file.GetRasterBand(1)
@@ -185,17 +181,19 @@ def read_gtif(ifile, metaData):
 
 
 def interp2d(xd, yd, data, xq, yq, **kwargs):
-    """Fast bilinear interpolation from grid."""
+    """Fast bilinear interpolation from grid.
+        xd, yd are the coordinates of data
+        xq, yq are the coordinates to interpolated.
+    """
 
-    xd = np.flipud(xd)
+    xd = np.flipud(xd)   # flip the x-axis, thus the start of the coord convert from bottom-left to up-left
     yd = np.flipud(yd)
     data = np.flipud(data)
 
-    xd = xd[0, :]
-    yd = yd[:, 0]
+    xd = xd[0, :]     # x-axis
+    yd = yd[:, 0]     # y-axis
 
     nx, ny = xd.size, yd.size
-    # (x_step, y_step) = (xd[1] - xd[0]), (yd[1] - yd[0])
 
     assert (ny, nx) == data.shape
     assert (xd[-1] > xd[0]) and (yd[-1] > yd[0])
@@ -205,12 +203,12 @@ def interp2d(xd, yd, data, xq, yq, **kwargs):
     elif np.size(yq) == 1 and np.size(xq) > 1:
         yq = yq * np.ones(xq.size)
 
-    xp = (xq - xd[0]) * (nx - 1) / (xd[-1] - xd[0])
+    xp = (xq - xd[0]) * (nx - 1) / (xd[-1] - xd[0])    # obtain interpolated coords(in the data grid)
     yp = (yq - yd[0]) * (ny - 1) / (yd[-1] - yd[0])
 
-    coord = np.vstack([yp, xp])
+    coord = np.vstack([yp, xp])    # yp, xp: row, col
 
-    zq = map_coordinates(data, coord, **kwargs)
+    zq = map_coordinates(data, coord, **kwargs) # coord: [[row..],[col..]], coord.shape[0]:rows, .shape[1]:cols
 
     return zq
 
@@ -219,14 +217,14 @@ def get_args():
     description = "Read ICESat-2 ATL06 data files."
     parser = argparse.ArgumentParser(description=description)
 
-    parser.add_argument(
+    parser.add_argument(    # positional parameter
         "ifiles",
         metavar="ifile",
         type=str,
         nargs="+",
         help="input files to read (.h5).",
     )
-    parser.add_argument(
+    parser.add_argument(   # optional parameter, begin with - or --
             '-o',
             metavar=('outdir'),
             dest='outdir',
@@ -386,8 +384,7 @@ def main(ifile, n=""):
     if ifile.endswith("_A.h5") or ifile.endswith("_D.h5"):
         return
 
-    # Loop trough beams
-
+    # Loop through beams
     for k in range(len(group)):
 
         # Load full data into memory (only once)
@@ -437,7 +434,7 @@ def main(ifile, n=""):
             beam = np.zeros(lat.shape)
 
         # Creating array of spot numbers
-        spot = float(spot_number) * np.ones(lat.shape)
+        spot = float(spot_number) * np.ones(lat.shape)   
 
         # Make sure its a 64 bit float
         dh_fit_dx = np.float64(dh_fit_dx)
@@ -459,17 +456,16 @@ def main(ifile, n=""):
         # Use raster mask
         elif fmask is not None:
 
-            if proj != "4326":
+            if proj != "4326":  # if mask proj is not 4326
 
                 # Reproject coordinates
-                (x, y) = transform_coord("4326", proj, lon, lat)
-
+                (x, y) = coor2coor("4326", proj, lon, lat)   # convert photon lon/lat to mask proj
             else:
 
                 x, y = lon, lat
 
             # Interpolation of grid to points for masking
-            i_m = interp2d(Xm, Ym, Zm, x.T, y.T, order=1)
+            i_m = interp2d(Xm, Ym, Zm, x.T, y.T, order=1) 
 
             # Set all NaN's to zero
             i_m[np.isnan(i_m)] = 0
@@ -487,7 +483,7 @@ def main(ifile, n=""):
         # Copy original flag
         q_flag = flag.copy()
 
-        # Quality flag + threshold + data inside box
+        # mask: Quality flag + threshold + data inside box
         flag = (flag == 0) & (np.abs(h_li) < 10e3) & (i_m > 0) & mask
 
         # Only keep good data (update variables)
@@ -536,11 +532,12 @@ def main(ifile, n=""):
         if len(h_li) == 0:
             return
 
-        # Time in decimal years
-        t_li = gps2dyr(t_dt + tref)
-
         # Time in GPS seconds
         t_gps = t_dt + tref
+
+        # Time in decimal years
+        t_li = gps2dyr(t_gps)
+
 
         # Determine track type (asc/des)
         (i_asc, i_des) = track_type(t_li, lat)
@@ -576,7 +573,7 @@ def main(ifile, n=""):
                 fa["lon"] = lon[i_asc][:]
                 fa["lat"] = lat[i_asc][:]
                 fa["h_elv"] = h_li[i_asc][:]
-                fa["s_elv"] = s_li[i_asc][:]
+                fa["s_elv"] = s_li[i_asc][:]    # the var name different with _D.h5 data, why??
                 fa["t_year"] = t_li[i_asc][:]
                 fa["h_rb"] = h_rb[i_asc][:]
                 fa["s_fg"] = s_fg[i_asc][:]
@@ -605,7 +602,8 @@ def main(ifile, n=""):
                 fd["lon"] = lon[i_des][:]
                 fd["lat"] = lat[i_des][:]
                 fd["h_elv"] = h_li[i_des][:]
-                fd["s_li"] = s_li[i_des][:]
+                # fd["s_li"] = s_li[i_des][:]   # the var name different with _D.h5 data, why??
+                fd["s_elv"] = s_li[i_des][:]    # change 's_li' to 's_elv'
                 fd["t_year"] = t_li[i_des][:]
                 fd["h_rb"] = h_rb[i_des][:]
                 fd["s_fg"] = s_fg[i_des][:]
@@ -633,7 +631,6 @@ def main(ifile, n=""):
         # Update orbit number
         orb_i += 1
 
-
 if njobs == 1:
 
     print("running in serial ...")
@@ -647,3 +644,5 @@ else:
     Parallel(n_jobs=njobs, verbose=5)(
             delayed(main)(f, n) for n, f in enumerate(ifiles)
     )
+
+

@@ -1,6 +1,6 @@
 import numpy as np
 
-
+### 计算沿轨和垂轨光子的投影坐标，产品中只提供光子段（segment）的沿轨垂轨投影坐标，和光子到每个光子段起点的距离
 # Adapted from a notebook by Tyler Sutterly 6/14/2019
 
 
@@ -35,11 +35,11 @@ def get_ATL03_x_atc(IS2_atl03_mds, IS2_atl03_attrs, IS2_atl03_beams):
         #-- along-track length for each ATL03 segment
         Segment_Length[gtx] = val['geolocation']['segment_length']
         #-- Transmit time of the reference photon
-        delta_time = val['geolocation']['delta_time']
+        ph_delta_time = val['geolocation']['delta_time']
 
         #-- iterate over ATL03 segments to calculate 40m means
         #-- in ATL03 1-based indexing: invalid == 0
-        #-- here in 0-based indexing: invalid == -1   
+        #-- here in 0-based indexing: invalid == -1
         segment_indices, = np.nonzero((Segment_Index_begin[gtx][:-1] >= 0) &
             (Segment_Index_begin[gtx][1:] >= 0))
         for j in segment_indices:
@@ -62,3 +62,4 @@ def get_ATL03_x_atc(IS2_atl03_mds, IS2_atl03_attrs, IS2_atl03_beams):
             distance_along_Y = np.copy(val['heights']['dist_ph_across'][idx:idx+cnt])
             val['heights']['x_atc'][idx:idx+cnt]=distance_along_X
             val['heights']['y_atc'][idx:idx+cnt]=distance_along_Y
+

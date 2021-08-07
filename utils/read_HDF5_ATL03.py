@@ -28,7 +28,7 @@ def read_HDF5_ATL03(FILENAME, ATTRIBUTES=True, VERBOSE=False):
         IS2_atl03_mds[gtx]['geophys_corr'] = {}
         #-- get each HDF5 variable
         #-- ICESat-2 Measurement Group
-        for key,val in fileID[gtx]['heights'].items():
+        for key, val in fileID[gtx]['heights'].items():
             IS2_atl03_mds[gtx]['heights'][key] = val[:]
         #-- ICESat-2 Geolocation Group
         for key,val in fileID[gtx]['geolocation'].items():
@@ -78,16 +78,16 @@ def read_HDF5_ATL03(FILENAME, ATTRIBUTES=True, VERBOSE=False):
     #-- ICESat-2 spacecraft orientation at time
     IS2_atl03_mds['orbit_info'] = {}
     IS2_atl03_attrs['orbit_info'] = {} if ATTRIBUTES else None
-    for key,val in fileID['orbit_info'].items():
+    for key, val in fileID['orbit_info'].items():
         IS2_atl03_mds['orbit_info'][key] = val[:]
         #-- Getting attributes of group and included variables
         if ATTRIBUTES:
             #-- Global Group Attributes
-            for att_name,att_val in fileID['orbit_info'].attrs.items():
+            for att_name, att_val in fileID['orbit_info'].attrs.items():
                 IS2_atl03_attrs['orbit_info'][att_name] = att_val
             #-- Variable Attributes
             IS2_atl03_attrs['orbit_info'][key] = {}
-            for att_name,att_val in val.attrs.items():
+            for att_name, att_val in val.attrs.items():
                 IS2_atl03_attrs['orbit_info'][key][att_name] = att_val
 
     #-- number of GPS seconds between the GPS epoch (1980-01-06T00:00:00Z UTC)
@@ -108,7 +108,7 @@ def read_HDF5_ATL03(FILENAME, ATTRIBUTES=True, VERBOSE=False):
                 IS2_atl03_attrs['ancillary_data'][key][att_name] = att_val
 
     #-- get ATLAS impulse response variables for the transmitter echo path (TEP)
-    tep1,tep2 = ('atlas_impulse_response','tep_histogram')
+    tep1, tep2 = ('atlas_impulse_response','tep_histogram')
     IS2_atl03_mds[tep1] = {}
     IS2_atl03_attrs[tep1] = {} if ATTRIBUTES else None
     for pce in ['pce1_spot1','pce2_spot3']:

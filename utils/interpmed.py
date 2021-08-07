@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.spatial import cKDTree
 
-def interpmed(x, y, z, Xi, Yi, n, d):
+def interpmed(x, y, z, Xi, Yi, n, d_max):
     """
     2D median interpolation of scattered data
 
@@ -28,7 +28,7 @@ def interpmed(x, y, z, Xi, Yi, n, d):
 
         if n == 1:
             pass
-        elif dxy.min() > d:
+        elif dxy.min() > d_max:
             continue
         else:
             pass

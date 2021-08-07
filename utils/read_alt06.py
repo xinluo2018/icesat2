@@ -93,7 +93,7 @@ def read_atl06(fname, outdir='data', bbox=None):
                 t_ref = fi['/ancillary_data/atlas_sdp_gps_epoch'][:]     # single value
                 beam_type = fi[g].attrs["atlas_beam_type"].decode()      # strong/weak (str)
                 spot_number = fi[g].attrs["atlas_spot_number"].decode()  # number (str)
-                
+            
         except:
             print('skeeping group:', g)
             print('in file:', fname)
@@ -111,7 +111,7 @@ def read_atl06(fname, outdir='data', bbox=None):
         else:
             bbox_mask = np.ones_like(data['lat'], dtype=bool)  # get all
             
-        # Only keep good data (quality flag + threshold + bbox)
+        # Only keep good data (quality flag + threshold + bbox); !!!why threshold is 1000?
         mask = (data['q_flag'] == 0) & (np.abs(data['h_li']) < 10e3) & (bbox_mask == 1)
         
         # If no data left, skeep

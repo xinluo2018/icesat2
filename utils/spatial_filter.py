@@ -1,47 +1,36 @@
 import numpy as np
 from scipy import stats
 
-def spatial_filter(x, y, z, dx, dy, n_sigma=3.0):
+def spatial_filter(x, y, z, dx, dy, sigma=3.0):
     """
-    Spatial outlier editing filter
-
-    :param x: x-coord (m)
-    :param y: y-coord (m)
-    :param z: values
-    :param dx: filter res. in x (m)
-    :param dy: filter res. in y (m)
-    :param n_sigma: cutt-off value
-    :param thres: max absolute value of data
-    :return: filtered array containing nan-values
+    des: outlier filtering within the defined spatial region (dx * dy). 
+    arg:
+        x, y: coord_x and coord_y (m)
+        z: value
+        dx, dy: resolution in x (m) and y (m)
+        n_sigma: cut-off value
+        thres: max absolute value of data
+    return: 
+        zo: filtered z, containing nan-values
     """
 
     Nn = int((np.abs(y.max() - y.min())) / dy) + 1
     Ne = int((np.abs(x.max() - x.min())) / dx) + 1
 
-    f_bin = stats.binned_statistic_2d(x, y, x, bins=(Ne, Nn))
-
-    index = f_bin.binnumber
-
+    f_bin = stats.binned_statistic_2d(x, y, z, bins=(Ne, Nn))
+    index = f_bin.binnumber   # the bin index of each (x,y)
     ind = np.unique(index)
-
     zo = z.copy()
-
+    # loop for each bin (valid data exit)
     for i in range(len(ind)):
-        
-        # index for each bin
-        idx, = np.where(index == ind[i])
-
+        # index: bin index corresponding to each data point
+        idx, = np.where(index == ind[i])   # idx: index of data points for on specific bin
         zb = z[idx]
-
         if len(zb[~np.isnan(zb)]) == 0:
             continue
-
         dh = zb - np.nanmedian(zb)
-
-        foo = np.abs(dh) > n_sigma * np.nanstd(dh)
-
+        foo = np.abs(dh) > sigma * np.nanstd(dh)
         zb[foo] = np.nan
-
         zo[idx] = zb
 
     return zo

@@ -9,10 +9,8 @@ Notes
     - If no 'key' is given, it merges files in the order they are passed/read.
     - If receive "Argument list too long", pass a string.
     - See complementary program: split.py
-Use case:
-    (ERS-2 over Ross Ice Shelf, ice mode asc)
-    python merge.py '/mnt/devon-r0/shared_data/ers/floating_/latest/*_ICE_*_A_*.h5' -o /mnt/devon-r0/shared_data/ers/floating_/latest/AntIS_ERS2_ICE_READ_A_ROSS_RM_IBE.h5 -m 8 -n 8
 """
+
 import warnings
 warnings.filterwarnings("ignore")
 import os
@@ -74,7 +72,9 @@ def get_var_names(ifile):
 
 
 def get_multi_io(ifiles, ofile, nfiles):
-    """ Construct multiple input/output file names. """
+    """ Construct multiple input/output file names. 
+        required in the parallel processing 
+    """
     # List of groups of input files
     ifiles = [list(arr) for arr in np.array_split(ifiles, nfiles)]
     # List of output file names
@@ -93,7 +93,7 @@ def merge(ifiles, ofile, vnames, comp):
     """
     # Get length of output containers (from all input files)
     print('Calculating lenght of output from all input files ...')
-    N = get_total_len(ifiles)
+    N = get_total_len(ifiles)   # 
 
     with h5py.File(ofile, 'w') as f:
 
@@ -107,8 +107,8 @@ def merge(ifiles, ofile, vnames, comp):
             print(('reading', ifile))
     
             # Write next chunk (the input file)
-            with h5py.File(ifile) as f2:
-                k2 = k1 + list(f2.values())[0].shape[0]  # first var/first dim
+            with h5py.File(ifile, 'r') as f2:
+                k2 = k1 + list(f2.values())[0].shape[0]  # k1,k2: the location of the var in the merged file
 
                 # Iterate over all variables
                 for key in vnames:
@@ -162,7 +162,9 @@ if __name__ == '__main__':
         from joblib import Parallel, delayed
         Parallel(n_jobs=njobs, verbose=5)(
                 delayed(merge)(fi, fo, vnames, comp) \
-                        for fi,fo in zip(ifile, ofile))
+                        for fi, fo in zip(ifile, ofile))
     else:
         print('Running sequential code ...')
         [merge(fi, fo, vnames, comp) for fi,fo in zip(ifile, ofile)]
+
+

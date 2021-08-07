@@ -47,6 +47,9 @@ import argparse
 from scipy import stats
 from scipy.spatial import cKDTree
 from numba import jit
+import matplotlib.pyplot as plt
+from spatial_filter import spatial_filter
+
 
 def transform_coord(proj1, proj2, x, y):
     """Transform coordinates from proj1 to proj2 (EPSG num)."""
@@ -60,60 +63,18 @@ def transform_coord(proj1, proj2, x, y):
 
 
 def make_grid(xmin, xmax, ymin, ymax, dx, dy):
-    """ Construct output grid-coordinates. """
-    Nn = int((np.abs(ymax - ymin)) / dy) + 1  # ny
-    Ne = int((np.abs(xmax - xmin)) / dx) + 1  # nx
-    xi = np.linspace(xmin, xmax, num=Ne)
+    """ des: construct output grid-coordinates.
+        aug:
+            xmin,xmax,ymin,ymax: the range of x and y.
+            dx,dy: the resolution in terms of x and y.
+        return:
+            x, y: np.array, shape equals the generated grid shape
+    """
+    Nn = int((np.abs(ymax - ymin)) / dy) + 1  # ny, row
+    Ne = int((np.abs(xmax - xmin)) / dx) + 1  # nx, col
+    xi = np.linspace(xmin, xmax, num=Ne)    # image coordinate
     yi = np.linspace(ymin, ymax, num=Nn)
-    return np.meshgrid(xi, yi)
-
-
-def spatial_filter(x, y, z, dx, dy, sigma=5.0, vmax=100):
-    """ Cleaning of spatial data """
-    
-    # Grid dimensions
-    Nn = int((np.abs(y.max() - y.min())) / dy) + 1
-    Ne = int((np.abs(x.max() - x.min())) / dx) + 1
-    
-    # Bin data
-    f_bin = stats.binned_statistic_2d(x, y, z, bins=(Ne,Nn))
-    
-    # Get bin numbers for the data
-    index = f_bin.binnumber
-    
-    # Unique indexes
-    ind = np.unique(index)
-    
-    # Create output
-    zo = z.copy()
-    
-    # Number of unique index
-    for i in range(len(ind)):
-        
-        # index for each bin
-        idx, = np.where(index == ind[i])
-        
-        # Get data
-        zb = z[idx]
-        
-        # Make sure we have enough
-        if len(zb[~np.isnan(zb)]) == 0:
-            continue
-    
-        # Set to median of values
-        dh = zb - np.nanmedian(zb)
-
-        # Identify outliers
-        foo = np.abs(dh) > sigma*np.nanstd(dh)
-    
-        # Set to nan-value
-        zb[foo] = np.nan
-        
-        # Replace data
-        zo[idx] = zb
-    
-    # Return filtered array
-    return zo
+    return np.meshgrid(xi, yi, indexing='xy')
 
 @jit(nopython=True)
 def fwavg(w, z):
@@ -125,17 +86,27 @@ def fwstd(w, z, zm):
 
 @jit(nopython=True)
 def make_weights(dr, dt, ad, at):
+    '''
+    des: 
+    arg: 
+        dr, dt: i.e. r-mean(r) and d-mean(d)
+        ad, at: are the std corresponding to each dimension. actually sigma in the gaussian distribution. 
+    return:
+         exponential term in the gaussian function part
+    '''
     ed = np.exp(-(dr ** 2)/(2 * ad ** 2))
     et = np.exp(-(dt ** 2)/(2 * at ** 2))
     return ed, et
 
+
 @jit(nopython=True)
 def square_dist(x, y, xi, yi):
+    '''arg: x,y are the coords of the neighboring points, and xi, yi are the center point'''
     return np.sqrt((x - xi)**2 + (y - yi)**2)
 
 @jit(nopython=True)
 def fast_sort(x):
-    return np.argsort(x)
+    return np.argsort(x)     # return the index 
 
 # Description of algorithm
 des = 'Spatio-temporal interpolation of irregular data'
@@ -164,7 +135,7 @@ parser.add_argument(
 parser.add_argument(
         '-t', metavar=('tmin','tmax','dt'), dest='time', type=float, nargs=3,
         help=('temporal resolution for grid (months)'),
-        default=[-9999, 9999, 1],)
+        default=[-9999, 9999, 1], )
 
 parser.add_argument(
         '-r', metavar='radius', dest='radius', type=float, nargs=1,
@@ -186,10 +157,10 @@ parser.add_argument(
         help=('sample every n:th point in dataset'),
         default=[1],)
 
-parser.add_argument(
+parser.add_argument(    
         '-c', metavar=('dim','thres','max'), dest='filter', type=float, nargs=3,
         help=('dim. of filter in km, sigma thres and max-value'),
-        default=[0,0,9999],)
+        default=[0, 0, 9999],)
 
 parser.add_argument(
         '-v', metavar=('x','y','z','t','s'), dest='vnames', type=str, nargs=5,
@@ -203,19 +174,19 @@ args = parser.parse_args()
 ifile   = args.ifile[0]
 ofile   =  args.ofile[0]
 bbox    = args.bbox
-dx      = args.dxy[0] * 1e3
+dx      = args.dxy[0] * 1e3        # convert km to m
 dy      = args.dxy[1] * 1e3
 proj    = args.proj[0]
-dmax    = args.radius[0] * 1e3
-alpha_d = args.alpha[0] * 1e3
-alpha_t = args.alpha[1] / 12.
+dmax    = args.radius[0] * 1e3     # convert km to m
+alpha_d = args.alpha[0] * 1e3      # sigma in distance dimension
+alpha_t = args.alpha[1] / 12.      # sigma in temporal dimension
 vicol   = args.vnames[:]
-dxy     = args.filter[0] * 1e3
-thres   = args.filter[1]
-vmax    = args.filter[2]
-tmin    = args.time[0]
-tmax    = args.time[1]
-tres    = args.time[2]/12.
+dxy     = args.filter[0] * 1e3     #  spatial distance for filtering
+thres   = args.filter[1]           #  sigma for the outliers filter in a spatial grid
+vmax    = args.filter[2]           #  max height threshold
+tmin    = args.time[0]             #  unit: year
+tmax    = args.time[1]             # 
+tres    = args.time[2]/12.         #  unit: convert month to year
 nsam    = args.n_sample[0]
 
 # Print parameters to screen
@@ -254,14 +225,13 @@ if bbox[0] is not None:
     (xmin, xmax, ymin, ymax) = bbox
 
 else:
-    
     # Create bounding box limits
     xmin, xmax, ymin, ymax = xp.min(), xp.max(), yp.min(), yp.max()
 
 # Time vector
 ti = np.arange(tmin, tmax + tres, tres)
 
-# Construct the grid
+# Construct the grid: the cross point (Xi, Yi) can be regarded as interpolated point
 Xi, Yi = make_grid(xmin, xmax, ymin, ymax, dx, dy)
 
 # Shape of grid
@@ -270,99 +240,70 @@ Nx, Ny = Xi.shape
 # Length of time vector
 Nt = len(ti)
 
-# Output vectors
-Zi = np.ones((Nt, Nx, Ny)) * np.nan
-Ei = np.ones((Nt, Nx, Ny)) * np.nan
-Ni = np.ones((Nt, Nx, Ny)) * np.nan
+# Output 3-D vectors: (time, row, col)
+Zi = np.ones((Nt, Nx, Ny)) * np.nan    # predicted height through the neiboring points in the temporal bin 
+Ei = np.ones((Nt, Nx, Ny)) * np.nan    # error of the neiboring points in the temporal bin
+Ni = np.ones((Nt, Nx, Ny)) * np.nan    # number (all time) of the neiboring points
 
 # Check if we should filter
 if dxy != 0:
-
-    print('-> cleaning data ...')
-
+    print('-> filtering data ...')
     # Global filtering before cleaning 
-    i_o = np.abs(zp) < vmax
-
+    i_o = np.abs(zp) < vmax 
     # Remove all NaNs 
     xp, yp, zp, tp, sp = xp[i_o], yp[i_o], zp[i_o], tp[i_o], sp[i_o]
-    
-    # Clean the data in the spatial domain
+    # Filter the data in the spatial domain
     zp = spatial_filter(xp.copy(), yp.copy(), zp.copy(), dxy, dxy, sigma=thres)
 
 print("-> creating kdtree ...")
-
 # Construct cKDTree
 tree = cKDTree(np.c_[xp, yp])
-
 print('-> interpolating data ...')
 
-import matplotlib.pyplot as plt
-
-# Enter prediction loop
-for i in range(int(Nx)):
-    for j in range(int(Ny)):
-
-        # Find closest observations for entire stack
+# --- prediction loop (spatial dimension --> temporal dimension)
+# Loop trough spatial dimension
+for i in range(int(Nx)):   # row
+    for j in range(int(Ny)):    # col
         idx = tree.query_ball_point([Xi[i,j], Yi[i,j]], r=dmax)
-
-        # Test if empty
-        if len(idx) == 0: continue
-
-        # Extract data for solution
+        if len(idx) == 0: 
+            continue
         xt = xp[idx]
         yt = yp[idx]
         zt = zp[idx]
         tt = tp[idx]
         st = sp[idx]
 
-        # Loop trough time 
+        # Loop trough time (temporal dimension)
         for k in range(int(Nt)):
+            dt = np.abs(tt - ti[k])    # ti[k] corresponding to the interpolated point.            
+            dist = square_dist(xt, yt, Xi[i,j], Yi[i,j]) # Distance from interpolated point (Xi[i,j], Yi[i,j]).
 
-            # Difference in time 
-            dt = np.abs(tt - ti[k])
-            
-            # Distance from center 
-            dr = square_dist(xt, yt, Xi[i,j], Yi[i,j])
-             
-            # Compute the weighting factors
-            ed, et = make_weights(dr, dt, alpha_d, alpha_t)
-           
-            # Combine weights and scale with error
-            w = (1. / st ** 2) * ed * et
-            
-            # Add something small to avoid division by zero
-            w += 1e-6
-        
-            # Predicted value
-            zi = fwavg(w, zt)
-            
+            # Compute the weighting factors, larger dist,dt, smaller ed,et
+            # alpha_d, alpha_t are actually the sigma in gaussian distribution function
+            ed, et = make_weights(dist, dt, alpha_d, alpha_t)
+            # Combine weights and scale with error, similar to the joint probability density function
+            w = (1. / st ** 2) * ed * et            
+            w += 1e-6   # avoid division by zero
+            zi = fwavg(w, zt)     #  weighted mean height
             # Test for signular values 
-            if np.abs(zi) < 1e-6: continue
-            
-            # Compute random error
-            sigma_r = fwstd(w, zt, zi)
-
-            # Compute systematic error
-            sigma_s = 0 if np.all(st == 1) else np.nanmean(st)
-
-            # Prediction error at grid node
-            ei = np.sqrt(sigma_r ** 2 + sigma_s ** 2)
-
-            # Number of obs. in solution
-            ni = len(zt)
-
-            # Save data to output
-            Zi[k,i,j] = zi
-            Ei[k,i,j] = ei
-            Ni[k,i,j] = ni
+            if np.abs(zi) < 1e-6: 
+                continue
+            sigma_r = fwstd(w, zt, zi)    # Compute weighted height std 
+            sigma_s = 0 if np.all(st == 1) else np.nanmean(st)  # Compute systematic error
+            ei = np.sqrt(sigma_r ** 2 + sigma_s ** 2)   # Prediction error at grid node (interpolated point)
+            ni = len(zt)        #  Number of obs. in solution
+            ## Save data to output (interpolated point: (k,i,j) )
+            Zi[k,i,j] = zi    # interpolated height
+            Ei[k,i,j] = ei    # interpolated error
+            Ni[k,i,j] = ni    # number of points in the interpolation.
 
 print('-> saving predictions to file...')
 
 # Save data to file
 with h5py.File(ofile, 'w') as foo:
 
-    foo['X'] = Xi
-    foo['Y'] = Yi
+    foo['X'] = Xi       #  X is the projected coord
+    foo['Y'] = Yi       #  Y is the projected coord
     foo['time'] = ti
     foo['Z_pred'] = Zi
     foo['Z_rmse'] = Ei

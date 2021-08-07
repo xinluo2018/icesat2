@@ -1,8 +1,10 @@
+### !! still not full understand
+
 import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 
-def interpkrig(x, y, z, s, Xi, Yi, d, a, n):
+def interpkrig(x, y, z, s, Xi, Yi, n, d_max, a):
     """
     2D interpolation using ordinary kriging/collocation
     with second-order markov covariance model.
@@ -15,7 +17,7 @@ def interpkrig(x, y, z, s, Xi, Yi, d, a, n):
     :param Yi: y-coord. interp. point(s) (m)
     :param d: maximum distance allowed (m)
     :param a: correlation length in distance (m)
-    :param n: number of nearest neighbours
+    :param n: number of nearest neighbours, should > 1
     :return: 1D vec. of prediction, sigma and nobs
     """
 
@@ -37,13 +39,14 @@ def interpkrig(x, y, z, s, Xi, Yi, d, a, n):
     
     # Convert to meters
     a *= 0.595 * 1e3
-    d *= 1e3
+    d_max *= 1e3
 
     for i in range(len(xi)):
+        
+        # dxy is the distance between center point to neighboring points
+        (dxy, idx) = tree.query((xi[i], yi[i]), k=n) 
 
-        (dxy, idx) = tree.query((xi[i], yi[i]), k=n)
-
-        if dxy.min() > d:
+        if dxy.min() > d_max:
             continue
 
         xc = x[idx]
@@ -51,15 +54,16 @@ def interpkrig(x, y, z, s, Xi, Yi, d, a, n):
         zc = z[idx]
         sc = s[idx]
 
-        if len(zc) < 2: continue
+        if len(zc) < 2: 
+            continue
         
         m0 = np.median(zc)
         c0 = np.var(zc)
         
-        # Covariance function for Dxy
+        # Covariance function for Dxy  
         Cxy = c0 * (1 + (dxy / a)) * np.exp(-dxy / a)
         
-        # Compute pair-wise distance
+        # Compute pair-wise distance (neighboring points to neighboring points)
         dxx = cdist(np.c_[xc, yc], np.c_[xc, yc], "euclidean")
         
         # Covariance function Dxx
