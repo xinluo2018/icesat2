@@ -1,3 +1,4 @@
+
 import numpy as np
 from scipy import stats
 
@@ -24,7 +25,7 @@ def spatial_filter(x, y, z, dx, dy, sigma=3.0):
     # loop for each bin (valid data exit)
     for i in range(len(ind)):
         # index: bin index corresponding to each data point
-        idx, = np.where(index == ind[i])   # idx: index of data points for on specific bin
+        idx, = np.where(index == ind[i])   # idx:  data points indices in specific bin
         zb = z[idx]
         if len(zb[~np.isnan(zb)]) == 0:
             continue
@@ -34,4 +35,3 @@ def spatial_filter(x, y, z, dx, dy, sigma=3.0):
         zo[idx] = zb
 
     return zo
-

@@ -5,3 +5,4 @@ data/rgi/*
 data/icesat2/*
 data/dem/*
 data/rs_img/*
+# **/.DS_Store

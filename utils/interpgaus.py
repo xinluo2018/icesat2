@@ -1,17 +1,15 @@
 import numpy as np
 from scipy.spatial import cKDTree
 
-def interpgaus(x, y, z, s, Xi, Yi, n, d_max, a):
+def interpgaus(x, y, z, s, xi, yi, n, d_max, a):
 
     """
-    des:2D interpolation using a gaussian kernel, weighted by distance and error
-        similar to the data smooth (fittopo: processing in the generated bin, 
-        interpgaus process data by iterating each data point.)
+    des:2D interpolation using a gaussian kernel, weighted by distance and error.
     arg: 
         x, y: x-coord (m) and y-coord (m) corresponding to all the data points, 
         z: values
         s: obs. errors
-        Xi, Yi: x-coord (m) and y-coord (m) corresponding to the interpolated points.
+        xi, yi: x-coord (m) and y-coord (m) corresponding to the interpolated points.
         n: the nearest n neighbours for searching.
         d_max: maximum distance allowed (m)
         a: correlation length in distance (m)
@@ -20,8 +18,8 @@ def interpgaus(x, y, z, s, Xi, Yi, n, d_max, a):
         ni: number of objects for interpolation
     """
 
-    xi = Xi.ravel()
-    yi = Yi.ravel()
+    xi = xi.ravel()
+    yi = yi.ravel()
 
     zi = np.zeros(len(xi)) * np.nan   # 
     ei = np.zeros(len(xi)) * np.nan
@@ -52,7 +50,7 @@ def interpgaus(x, y, z, s, Xi, Yi, n, d_max, a):
         sigma_r = np.nansum(wc * (zc - zi[i])**2) / np.nansum(wc)   # Weighted rmse of height
         sigma_s = 0 if np.all(s == 1) else np.nanmean(sc)        # Obs. error
         ei[i] = np.sqrt(sigma_r ** 2 + sigma_s ** 2)   # Prediction error
-        ni[i] = 1 if n == 1 else len(zc)      # Number of points in prediction
+        ni[i] = 1 if n == 1 else len(zc)               # Number of points in prediction
 
     return zi, ei, ni
 

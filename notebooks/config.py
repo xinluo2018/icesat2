@@ -1,2 +1,4 @@
-root = '/Users/luo/OneDrive/Open-source-project/icesat2'
+root = '/Users/luo/OneDrive/GitHub/icesat2'
+
+
 

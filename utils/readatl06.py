@@ -44,11 +44,10 @@ from scipy.ndimage import map_coordinates
 
 def segment_diff_filter(dh_fit_dx, h_li, tol=2):
     """ Coded by Ben Smith @ University of Washington """
-    dAT = 20.0  # distance between the neighbor segments centers
+    dAT = 20.0  # distance between the neighbor segments centers; the segment length is 40 m.
 
     if h_li.shape[0] < 3:
         mask = np.ones_like(h_li, dtype=bool)
-
         return mask
 
     EPplus = h_li + dAT * dh_fit_dx     # height of segment head, estimated
@@ -149,24 +148,16 @@ def read_gtif(ifile, metaData):
     dy = trans[5]
 
     if metaData == "A":   # convert image xy to projection xy(center of the pixel)
-
         xp = np.arange(Nx)
         yp = np.arange(Ny)
-
         (Xp, Yp) = np.meshgrid(xp, yp)
-
-        X = (
-            trans[0] + (Xp + 0.5) * trans[1] + (Yp + 0.5) * trans[2]
-        )   # FIXME: bottleneck!
+        X = (trans[0] + (Xp + 0.5) * trans[1] + (Yp + 0.5) * trans[2])   # FIXME: bottleneck!
         Y = trans[3] + (Xp + 0.5) * trans[4] + (Yp + 0.5) * trans[5]
 
     if metaData == "P":   # convert image xy to projection xy (left up of the pixel)
-
         xp = np.arange(Nx)
         yp = np.arange(Ny)
-
         (Xp, Yp) = np.meshgrid(xp, yp)
-
         X = trans[0] + Xp * trans[1] + Yp * trans[2]    # FIXME: bottleneck!
         Y = trans[3] + Xp * trans[4] + Yp * trans[5]
 
@@ -181,35 +172,32 @@ def read_gtif(ifile, metaData):
 
 
 def interp2d(xd, yd, data, xq, yq, **kwargs):
-    """Fast bilinear interpolation from grid.
-        xd, yd are the coordinates of data
-        xq, yq are the coordinates to interpolated.
+    """ des: fast bilinear interpolation from grid.
+        arg:
+            xd, yd are the coordinates of data
+            xq, yq are the coordinates to interpolated.
+        retrun:
+            1-d interpolated value
     """
-
     xd = np.flipud(xd)   # flip the x-axis, thus the start of the coord convert from bottom-left to up-left
     yd = np.flipud(yd)
     data = np.flipud(data)
-
     xd = xd[0, :]     # x-axis
     yd = yd[:, 0]     # y-axis
-
     nx, ny = xd.size, yd.size
-
     assert (ny, nx) == data.shape
     assert (xd[-1] > xd[0]) and (yd[-1] > yd[0])
-
     if np.size(xq) == 1 and np.size(yq) > 1:
         xq = xq * np.ones(yq.size)
     elif np.size(yq) == 1 and np.size(xq) > 1:
         yq = yq * np.ones(xq.size)
-
     xp = (xq - xd[0]) * (nx - 1) / (xd[-1] - xd[0])    # obtain interpolated coords(in the data grid)
     yp = (yq - yd[0]) * (ny - 1) / (yd[-1] - yd[0])
 
     coord = np.vstack([yp, xp])    # yp, xp: row, col
-
-    zq = map_coordinates(data, coord, **kwargs) # coord: [[row..],[col..]], coord.shape[0]:rows, .shape[1]:cols
-
+    # input: value array, and coord([[row..],[col..]], coord.shape[0]:rows, .shape[1]:cols)
+    # return: 1-d interpolated value
+    zq = map_coordinates(data, coord, **kwargs) 
     return zq
 
 
@@ -332,11 +320,10 @@ if fmask is not None:
 
     if fmask.endswith(".tif"):
 
-        # Read in masking grid
+        # Read in masking grid, 
         (Xm, Ym, Zm, dX, dY, Proj) = read_gtif(fmask, "A")
 
     else:
-
         # Read Hdf5 from memory
         Fmask = h5py.File(fmask, "r")
         Xm = Fmask["X"][:]
@@ -346,52 +333,34 @@ if fmask is not None:
 # Test for black list file
 
 if bfile is not None:
-
     blacklist = pd.read_csv(bfile).values
 
-
 def main(ifile, n=""):
-
     # Get index of where filename starts
     nidx = ifile.rfind("/") + 1
-
     # Check if we should process
-
     if bfile is not None:
         if np.any(ifile[nidx:] == blacklist):
             print("Rejected by blacklist")
             return
-
     # Check if we are using granules
-
     if gran is not None:
-
         gran_str = ifile.split("_")[-3]
-
         n_str = len(gran_str)
-
         gran_num = int(gran_str[-2:n_str])
-
         # Check granule number
-
         if np.all(gran_num != gran):
             return
-
     # Access global variable (outsise function)
     global orb_i
-
     # Check if we already processed the file
     if ifile.endswith("_A.h5") or ifile.endswith("_D.h5"):
         return
-
     # Loop through beams
     for k in range(len(group)):
-
         # Load full data into memory (only once)
         with h5py.File(ifile, "r") as fi:
-
             try:
-
                 # Read in varibales of interest (more can be added!)
                 dac = fi[group[k] + "/land_ice_segments/geophysical/dac"][:]
                 lat = fi[group[k] + "/land_ice_segments/latitude"][:]
@@ -420,7 +389,6 @@ def main(ifile, n=""):
                 tide_pole = fi[group[k] + "/land_ice_segments/geophysical/tide_pole"][:]
 
             except:
-
                 print(("skeeping group:", group[k]))
                 print(("in file:", ifile))
                 continue
@@ -455,26 +423,19 @@ def main(ifile, n=""):
 
         # Use raster mask
         elif fmask is not None:
-
             if proj != "4326":  # if mask proj is not 4326
-
                 # Reproject coordinates
                 (x, y) = coor2coor("4326", proj, lon, lat)   # convert photon lon/lat to mask proj
             else:
-
                 x, y = lon, lat
-
             # Interpolation of grid to points for masking
-            i_m = interp2d(Xm, Ym, Zm, x.T, y.T, order=1) 
-
+            i_m = interp2d(Xm, Ym, Zm, x.T, y.T, order=1)   # non-zero is the valid
             # Set all NaN's to zero
             i_m[np.isnan(i_m)] = 0
 
         else:
-
             # Select all boolean
             ibox = np.ones(lat.shape, dtype=bool)
-
             i_m = np.ones(lat.shape)
 
         # Compute segment difference mask
@@ -543,17 +504,13 @@ def main(ifile, n=""):
         (i_asc, i_des) = track_type(t_li, lat)
 
         # Determine satellite/mission index
-
         if index is not None:
-
             # Add unique mission identifier
             orb_unique = np.char.add(str(index), str(orb_i)).astype("int")
-
             # Create orbit number
             orb = np.full(t_gps.shape, orb_unique)
 
         else:
-
             # Create orbit number
             orb = np.full(t_gps.shape, orb_i)
 
@@ -624,7 +581,7 @@ def main(ifile, n=""):
                 ostr = "_D.h5"
 
         try:
-            print((ofile.replace(".h5", ostr)))
+            print('write file:', (ofile.replace(".h5", ostr)))
         except:
             print("Not processed!")
 

@@ -5,8 +5,8 @@ description = "Read ICESat-2 ATL06 data files."
 parser = argparse.ArgumentParser(description=description)
 
 parser.add_argument(    # positional parameter
-    "ifilesss",
-    metavar="ifilessss",
+    "ifiles",
+    metavar="ifiles",
     type=str,
     nargs="+",
     help="input files to read (.h5).",
@@ -25,12 +25,11 @@ parser.add_argument(   # optional parameter, begin with - or --
 
 # args = get_args()
 args = parser.parse_args()
-ifile = args.ifilesss
-opath = args.outdir1
+ifile = args.ifiles
 
 def main(ifile):
     print(type(ifile))
-    print(opath)
+    print(ifile)
 
 if __name__ == "__main__":
     main(ifile)

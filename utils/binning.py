@@ -1,15 +1,14 @@
 import numpy as np
 
-
 def binning_1d(x, y, xmin=None, xmax=None, dx=1 / 12.,
-                        window=3 / 12., interp=False, median=False):
+                            window=3 / 12., interp=False, median=False):
     """ des: 1-dimentional binning, e.g., time-series data binning.
         args:
             x, y: independent and dependent variable, e.g., time and value of the time series data.
             xmin, xmax: range of the variable x.
             dx: resolution of x. e.g., 1/12 represents 1 month if the unit of x is year.
             window: size of binning window. 3/12 represents 3 month if the unit of x is year
-            interp: interpolate binned values to original x points.
+            interp: interpolate bin values to x points. if none, one bin has one value.
             median: median value of the bin values, if not set, the mean value is calculated.
         return: 
             xb, yb: x, y corresponding to in each bin center, or interpolation point
@@ -47,7 +46,7 @@ def binning_1d(x, y, xmin=None, xmax=None, dx=1 / 12.,
             yb[i] = np.nanmean(ybv)
 
         xb[i] = 0.5 * (t1 + t2)         # determine the time of the bin
-        eb[i] = 1.4826 * np.nanmedian(np.abs(ybv - np.nanmedian(ybv))) # mad-based std
+        eb[i] = 1.4826 * np.nanmedian(np.abs(ybv - np.nanmedian(ybv)))  # mad-based std
         nb[i] = np.sum(~np.isnan(ybv))  # counts of the valid values in bin
         sb[i] = np.sum(ybv)             # sum of the values in bin
 
@@ -59,5 +58,4 @@ def binning_1d(x, y, xmin=None, xmax=None, dx=1 / 12.,
             xb = x
         except:
             pass
-
     return xb, yb, eb, nb, sb
