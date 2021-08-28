@@ -35,20 +35,23 @@ def get_args():
     return parser.parse_args()
 
 def split_atl06(file_in, dir_out):
-    ''' des: split icesat2 atl06 data by ground tracks/spots.
-             spots order will change when the satellite oritenation change,
-             while spot 1,2,3,4,5,6 are always corresponding to beam 1,2,3,4,5,6 
-             and strong beam, weak beam, s, w, s, w.
-             user can add the interested variables individually.
-            
-        arg: 
-            file_in: atl06 file, .h5 format
-            path_out: path to save the splitted atl06 data
-        return:
-            splitted icesat2 atl06 data: splitted by beams, by ascending/descending
+
+    ''' 
+    des: 
+        split icesat2 atl06 data by ground tracks/spots.
+        spots order will change when the satellite oritenation change,
+        while spot 1,2,3,4,5,6 are always corresponding to beam 1,2,3,4,5,6 
+        and strong beam, weak beam, s, w, s, w.
+        user can add the interested variables individually.
+    arg: 
+        file_in: atl06 file, .h5 format
+        path_out: path to save the splitted atl06 data
+    return:
+        splitted icesat2 atl06 data: splitted by beams and orbits(ascending/descending) 
     '''
  
     group = ["./gt1l", "./gt1r", "./gt2l", "./gt2r", "./gt3l", "./gt3r"]
+
     ## loop for groups
     for k in range(len(group)):
         with h5py.File(file_in, "r") as fi:
@@ -65,12 +68,11 @@ def split_atl06(file_in, dir_out):
                 rgt = fi["/orbit_info/rgt"][:] * np.ones(len(lat))
                 ## attributes
                 beam_type = fi[group[k]].attrs["atlas_beam_type"].decode()
-                spot_number = fi[group[k]].attrs["atlas_spot_number"].decode()  #  ??
+                spot_number = fi[group[k]].attrs["atlas_spot_number"].decode()   #  ??
             except:
                 print(("missing group:", group[k]))
                 print(("in file:", file_in))
                 continue
-
         ## set beam type: 1 -> strong, 0 -> weak
         if beam_type == "strong":
             beam_types = np.ones(lat.shape)
@@ -83,6 +85,7 @@ def split_atl06(file_in, dir_out):
         t_li = gps2dyr(t_gps)    #  time in decimal years
         ### --- obtain orbit type
         (i_asc, i_des) = orbit_type(t_li, lat)   #  track type (asc/des)        
+
         name, ext = os.path.splitext(os.path.basename(file_in))
         file_out = os.path.join(
             dir_out, name + "_" + group[k][2:] + "_spot" + spot_number + ext
@@ -96,7 +99,7 @@ def split_atl06(file_in, dir_out):
                 fa["t_year"] = t_li[i_asc][:]
                 fa["cycle"] = cycle[i_asc][:]
                 fa["beam_type"] = beam_types[i_asc][:]
-                fa["spot"] = spot[i_asc][:]   # corresponding to each beam.
+                fa["spot"] = spot[i_asc][:]     #  corresponding to each beam.
                 fa["rgt"] = rgt[i_asc][:]
                 fa["quality_summary"] = quality[i_asc][:]
                 ostr = "_A.h5"
@@ -116,6 +119,9 @@ def split_atl06(file_in, dir_out):
                 fd["quality_summary"] = quality[i_des][:]
                 ostr = "_D.h5"
             print('written file:', (file_out.replace(".h5", ostr)))
+
+        # Update orbit number
+
     return
 
 
