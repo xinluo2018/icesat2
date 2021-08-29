@@ -56,11 +56,11 @@ def partition(length, parts):
     return sublengths
 
 
-def split_file(infile):
+def split_file(ifile):
 
-    print(('input -> ', infile))
+    print(('input -> ', ifile))
 
-    with h5py.File(infile, 'r') as f:
+    with h5py.File(ifile, 'r') as f:
 
         # Determine the total legth of input file
         total_length = list(f.values())[0].shape[0]
@@ -70,22 +70,18 @@ def split_file(infile):
         print(lengths)
 
         # Determine the names of output files
-        fname = os.path.splitext(infile)[0] + '_%03d.h5'
+        fname = os.path.splitext(ifile)[0] + '_%03d.h5'
         outfiles = [(fname % k) for k in range(len(lengths))]
 
         i1, i2 = 0, 0
         for outfile, length in zip(outfiles, lengths):
-
             i2 += length
-
             # Save chunks of each variable from f -> f2 
             with h5py.File(outfile, 'w') as f2:
                 for key in list(f.keys()):
                     f2[key] = f[key][i1:i2]
-
             i1 = i2
             print(('output ->', outfile))
-
 
 if __name__ == '__main__':
     # global variables

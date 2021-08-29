@@ -28,10 +28,8 @@ import pyproj
 import h5py
 import argparse
 import warnings
-import matplotlib.pyplot as plt
 from datetime import datetime
-from scipy import stats
-from helper import mad_std, intersect, get_bboxs_id
+from helper import intersect, get_bboxs_id
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.interpolate import InterpolatedUnivariateSpline
 
@@ -74,10 +72,10 @@ def get_args():
             help='interpolation method, "linear" or "cubic"',
             choices=('linear', 'cubic'), default=['linear'],)
     parser.add_argument(
-            '-v', metavar=('o','x','y','t','h'), dest='vnames', type=str, nargs=5,
-            help=('main vars: names if HDF5, orbit/lon/lat/time/height'),
+            '-v', metavar=('spot','x','y','t','h'), dest='vnames', type=str, nargs=5,
+            help=('main vars: names if HDF5, spot/lon/lat/time/height'),
             default=[None],)
-    parser.add_argument(       # 
+    parser.add_argument(         # 
             '-f', dest='tile', action='store_true',
             help=('run in tile mode'),
             default=False)
@@ -85,18 +83,19 @@ def get_args():
     return parser.parse_args()
 
 def interp1d(x, y, xi, n = 1):
-    """ des: 1D interpolation (Spline)
+    """ des: 
+            1D interpolation (spline)
         args:
             x,y are the given pair-wise values
             xi is the interpolation point.
-            n: Degree of the smoothing spline. Must be 1 <= n <= 5.
+            n: degree of the smoothing spline. must be 1 <= n <= 5.
         return:
             interpolated yi value
     """
     idx = np.argsort(x)    # Sort data by x value
     x, y = x[idx], y[idx]  # Sort arrays
-    Fi = InterpolatedUnivariateSpline(x, y, k=n)  # Create interpolator
-    yi = Fi(xi)     # Interpolated value
+    Fi = InterpolatedUnivariateSpline(x, y, k=n)  # create interpolator
+    yi = Fi(xi)     # interpolated value
     return yi
 
 
@@ -148,8 +147,8 @@ def coor2coor(srs_from, srs_to, x, y):
     return pyproj.transform(srs_from, srs_to, x, y, always_xy=True)
 
 
-def xover(lon_as, lat_as, time_as, height_as, orbit_as, 
-            lon_des, lat_des, time_des, height_des, orbit_des, 
+def xover(lon_as, lat_as, time_as, height_as, spot_as, 
+            lon_des, lat_des, time_des, height_des, spot_des, 
             nres, proj, radius_interp, tile_dxy=10, buff=1, mode_interp = 'linear'):
     """ 
     des: find and compute crossover values. 
@@ -203,7 +202,7 @@ def xover(lon_as, lat_as, time_as, height_as, orbit_as,
     # Initiate output container (dictionary)
     out = []    
     ibox = np.unique(bboxs)    
-    ki = 0              #  counter: count of the bins valid
+    num_box = 0              #  counter: count of the bins valid
 
     print('computing crossovers ...')
     #######   for bin in bins:
@@ -216,50 +215,50 @@ def xover(lon_as, lat_as, time_as, height_as, orbit_as,
         idx_as, = np.where(bboxs_as == k)    # idx_ is the data points index
         idx_des, = np.where(bboxs_des == k)
         # Extract points in the bin
-        orbits_as = orbit_as[idx_as]
-        x_as = xp_as[idx_as]                 #  projection coord_x
-        y_as = yp_as[idx_as]                 #  projection coord_y
-        h_as = height_as[idx_as]
-        t_as = time_as[idx_as]
+        spot_as_ibox = spot_as[idx_as]
+        x_as_ibox = xp_as[idx_as]                 #  projection coord_x
+        y_as_ibox = yp_as[idx_as]                 #  projection coord_y
+        h_as_ibox = height_as[idx_as]
+        t_as_ibox = time_as[idx_as]
         
-        orbits_des = orbit_des[idx_des]      #  
-        x_des = xp_des[idx_des]
-        y_des = yp_des[idx_des]
-        h_des = height_des[idx_des]
-        t_des = time_des[idx_des]
+        spot_des_ibox = spot_des[idx_des]         #  
+        x_des_ibox = xp_des[idx_des]
+        y_des_ibox = yp_des[idx_des]
+        h_des_ibox = height_des[idx_des]
+        t_des_ibox = time_des[idx_des]
 
         # Get unique orbits (in fact, are the ground track number)
-        orb_ids_as = np.unique(orbits_as)
-        orb_ids_des = np.unique(orbits_des)
+        spot_as_ibox_unique = np.unique(spot_as_ibox)
+        spot_des_ibox_unique = np.unique(spot_des_ibox)
 
         # Test if tile has no data 
         # cause bboxs = bboxs1, len(orbits1) !=1, len(orbits2) could be 0.
-        if len(orbits_as) == 0 or len(orbits_des) == 0:
+        if len(spot_as_ibox) == 0 or len(spot_des_ibox) == 0:
             continue
 
         # ---- loop through tracks (ground track in the specific bin) 
         # --> ascending tracks
-        for orb_id_as in orb_ids_as:
+        for spot_as_ibox_i in spot_as_ibox_unique:
             ## i_trk_: point index of the specific groud track.
-            i_trk_as = orbits_as == orb_id_as  
+            i_as_trk = spot_as_ibox == spot_as_ibox_i 
             ## extract points from the specific orbit (a specific track)
-            xa = x_as[i_trk_as]
-            ya = y_as[i_trk_as]
-            ta = t_as[i_trk_as]
-            ha = h_as[i_trk_as]
+            xa = x_as_ibox[i_as_trk]
+            ya = y_as_ibox[i_as_trk]
+            ta = t_as_ibox[i_as_trk]
+            ha = h_as_ibox[i_as_trk]
             
             # Loop through groud tracks (1-6) in specific bin 
             # --> descending tracks
-            for orb_id_des in orb_ids_des:
+            for spot_des_ibox_i in spot_des_ibox_unique:
 
                 # index of data points of specific track in file 2
-                i_trk_des = orbits_des == orb_id_des
+                i_des_trk = spot_des_ibox == spot_des_ibox_i
 
                 # extract points from a specific orbit (groud track)
-                xd = x_des[i_trk_des]
-                yd = y_des[i_trk_des]
-                td = t_des[i_trk_des]
-                hd = h_des[i_trk_des]
+                xd = x_des_ibox[i_des_trk]
+                yd = y_des_ibox[i_des_trk]
+                td = t_des_ibox[i_des_trk]
+                hd = h_des_ibox[i_des_trk]
                 
                 # Test length of vector
                 if len(xa) < 3 or len(xd) < 3: 
@@ -351,21 +350,22 @@ def xover(lon_as, lat_as, time_as, height_as, orbit_as,
                 out_i = np.full(10, np.nan)
                 
                 # Compute differences and save parameters
-                out_i[0]  = xi            # crossover points coord_x
-                out_i[1]  = yi            # ... coord_y
-                out_i[2]  = h_ai          # interpolated height by ascending track
-                out_i[3]  = h_di          # interpolated height by descending track
-                out_i[4]  = t_ai          # interpolated time by ascending track
-                out_i[5]  = t_di          # interpolated time by descending track
-                out_i[6] = orb_id_as      # groud track of ascending file
-                out_i[7] = orb_id_des     # groud track of decending file
-                out_i[8]  = h_ai - h_di   ## height difference between ascending and descending interpolations
-                out_i[9]  = t_ai - t_di   ## time difference between ...
+                out_i[0]  = xi             # crossover points coord_x
+                out_i[1]  = yi             # ... coord_y
+                out_i[2]  = h_ai           # interpolated height by ascending track
+                out_i[3]  = h_di           # interpolated height by descending track
+                out_i[4]  = t_ai           # interpolated time by ascending track
+                out_i[5]  = t_di           # interpolated time by descending track
+                out_i[6] = spot_as_ibox_i      # groud track of ascending file
+                out_i[7] = spot_des_ibox_i     # groud track of decending file
+                out_i[8]  = h_ai - h_di    ## height difference between ascending and descending interpolations
+                out_i[9]  = t_ai - t_di    ## time difference between ...
                         
                 # Add to list
                 out.append(out_i)
 
-        ki += 1
+        num_box += 1
+
 
     # Change back to numpy array
     out = np.asarray(out)
@@ -383,22 +383,21 @@ def xover(lon_as, lat_as, time_as, height_as, orbit_as,
     out[:,0], out[:,1] = coor2coor(proj, '4326', out[:,0], out[:,1])
     return out
 
-
 def xover_main(ifile_as, ifile_des, radius_interp, ofile_,
-                vnames, tile_dxy, tile=False):
+                    vnames, tile_dxy, tile=False):
     """ 
     des: 
         find and compute crossover values with input file paths. 
     arg:
         ifile1, ifile2: ascending and descending data respectively.
-        tspan: time span, a list contians mininum time (e.g., 2018.22) and maximun time. 
+        tspan:  time span, a list contians mininum time (e.g., 2018.22) and maximun time. 
         vnames: list of strings, [ovar, xvar, yvar, tvar, zvar], representing the name of groud track,
                 coord_x, coord_y, time, height in the .h5 file.
     """
 
     startTime = datetime.now()
     # get variable names, 
-    ovar, xvar, yvar, tvar, zvar = vnames
+    spotvar, xvar, yvar, tvar, zvar = vnames
 
     print('crossing files:', ifile_as, ifile_des, '...')
     # Load all 1d variables needed
@@ -406,32 +405,32 @@ def xover_main(ifile_as, ifile_des, radius_interp, ofile_,
          h5py.File(ifile_des, 'r') as f_des:
 
         #### ------ ascending file reading and remove invalid values
-        orbit_as  = f_as[ovar][:]
+        spot_as  = f_as[spotvar][:]
         lon_as    = f_as[xvar][:]
         lat_as    = f_as[yvar][:]
         time_as   = f_as[tvar][:]
         height_as = f_as[zvar][:]
-        orbit_as  = orbit_as[np.isfinite(height_as)]
+        spot_as  = spot_as[np.isfinite(height_as)]
         lon_as    = lon_as[np.isfinite(height_as)]
         lat_as    = lat_as[np.isfinite(height_as)]
         time_as   = time_as[np.isfinite(height_as)]
         height_as = height_as[np.isfinite(height_as)]    
 
         #### ------ descending file reading and remove invalid values
-        orbit_des  = f_des[ovar][:]
+        spot_des  = f_des[spotvar][:]
         lon_des    = f_des[xvar][:]
         lat_des    = f_des[yvar][:]
         time_des   = f_des[tvar][:]
         height_des = f_des[zvar][:]
-        orbit_des  = orbit_des[np.isfinite(height_des)]
+        spot_des  = spot_des[np.isfinite(height_des)]
         lon_des    = lon_des[np.isfinite(height_des)]
         lat_des    = lat_des[np.isfinite(height_des)]
         time_des   = time_des[np.isfinite(height_des)]
         height_des = height_des[np.isfinite(height_des)]
         
 
-    out = xover(lon_as, lat_as, time_as, height_as, orbit_as, 
-                lon_des, lat_des, time_des, height_des, orbit_des, 
+    out = xover(lon_as, lat_as, time_as, height_as, spot_as, 
+                lon_des, lat_des, time_des, height_des, spot_des, 
                 nres, proj, radius_interp, tile_dxy=tile_dxy, buff=1, mode_interp = 'linear')
 
     # create output file name if not given
@@ -455,8 +454,8 @@ def xover_main(ifile_as, ifile_des, radius_interp, ofile_,
     ozvar_des = zvar+'_des'
     otvar_as = tvar+'_as'
     otvar_des = tvar+'_des'
-    oovar_as = ovar+'_as'       # orbit of file1 (ascending/descending), orbit is the ground track number(0-5)
-    oovar_des = ovar+'_des'     # orbit of file2 (descending/ascending)
+    ospotvar_as = spotvar+'_as'       # orbit of file1 (ascending/descending), orbit is the ground track number(0-5)
+    ospotvar_des = spotvar+'_des'     # orbit of file2 (descending/ascending)
     ozvar_dif = zvar + '_dif'
     otvar_dif = tvar+'_dif'     # 
 
@@ -470,8 +469,8 @@ def xover_main(ifile_as, ifile_des, radius_interp, ofile_,
         f[ozvar_des] = out[:,3]
         f[otvar_as] = out[:,4]
         f[otvar_des] = out[:,5]
-        f[oovar_as] = out[:,6]
-        f[oovar_des] = out[:,7]
+        f[ospotvar_as] = out[:,6]
+        f[ospotvar_des] = out[:,7]
         f[ozvar_dif] = out[:,8]
         f[otvar_dif] = out[:,9]
 

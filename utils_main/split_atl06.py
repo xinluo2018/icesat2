@@ -119,9 +119,7 @@ def split_atl06(file_in, dir_out):
                 fd["quality_summary"] = quality[i_des][:]
                 ostr = "_D.h5"
             print('written file:', (file_out.replace(".h5", ostr)))
-
         # Update orbit number
-
     return
 
 

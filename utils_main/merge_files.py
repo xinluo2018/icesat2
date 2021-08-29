@@ -102,6 +102,7 @@ def get_multi_io(ifiles, ofile, nfiles):
     ofiles = [(fname % k) for k in range(len(ifiles))]
     return ifiles, ofiles
 
+
 # Sort input files by key 
 def sort_files(ifiles, key=None):
     """ des: sort files by numbers *after* the key in the file name. 
@@ -152,13 +153,11 @@ def merge(ifiles, ofile, vnames, comp):
     print(('output ->', ofile))
 
 
-
-
 if __name__ == '__main__':
 
     args = get_args() 
-    ifile = args.file[:]      # list
-    ofile = args.ofile[0]     # str
+    ifile = args.file[:]       # list
+    ofile = args.ofile[0]      # str
     nfiles = args.nfiles[0]
     vnames = args.vnames
     comp = args.comp[0]
