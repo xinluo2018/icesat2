@@ -1,13 +1,21 @@
-# author: Fernando Paolo, 
-## author: xin luo; create: 2021.8.8
+## main reference: https://github.com/fspaolo/captoolkit
+## author: xin luo; 
+## create: 2021.8.8
 
 import numpy as np
+from utils.make_grid import make_grid
+from utils.spatial_filter import spatial_filter
 from scipy.ndimage import map_coordinates
+from scipy.spatial import cKDTree
 from scipy.interpolate import InterpolatedUnivariateSpline
 
 
+### ------------------------------ ###
+###       1-d interpolation       ###
+### ------------------------------ ###
+
 def interp1d(x, y, xi, n = 1):
-    """ des: 1D interpolation (Spline)
+    """ des: 1D interpolation (spline)
         args:
             x,y are the given pair-wise values
             xi is the interpolation point.
@@ -21,6 +29,10 @@ def interp1d(x, y, xi, n = 1):
     yi = Fi(xi)     # Interpolated value
     return yi
 
+
+### ------------------------------ ###
+###       2-d interpolation       ###
+### ------------------------------ ###
 
 def interp2d(x, y, z, xi, yi, **kwargs):
     """ des: fast bilinear interpolation from grid.
@@ -53,6 +65,31 @@ def interp2d(x, y, z, xi, yi, **kwargs):
     return zq
 
 
+### ------------------------------ ###
+###       3-d interpolation       ###
+### ------------------------------ ###
+
+def interp3d(x, y, t, z, \
+                xi, yi, ti, alpha_d, alpha_t):
+    '''
+    des: 3-d interpolation by using gaussian method
+    '''
+    d_time = np.abs(t - ti)    # time difference from all the points.            
+    d_spat = np.sqrt((x - xi)**2 + (y - yi)**2)  # distance from interpolated point.
+    # --- Compute the weighting factors, larger dist,dt, smaller ed,et
+    # !!!alpha_d, alpha_t are actually the sigma in gaussian distribution function
+    ed = np.exp(-(d_spat ** 2)/(2 * alpha_d ** 2))
+    et = np.exp(-(d_time ** 2)/(2 * alpha_t ** 2))
+    # Combine weights and scale with error, similar to the joint probability density function
+    w = ed * et            
+    w += 1e-6    # avoid division of zero
+    zi = np.nansum(w*z)/np.nansum(w)   #  weighted mean height
+    print(zi)
+    sigma_r = np.nansum(w*(z-zi)**2)/np.nansum(w)  # Compute weighted height std 
+    ei = np.sqrt(sigma_r ** 2)   # prediction error at grid node (interpolated point)
+    ni = len(z)                  # Number of obs. in solution
+    
+    return zi, ei, ni
 
 
 

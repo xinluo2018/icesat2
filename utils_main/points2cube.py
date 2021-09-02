@@ -47,7 +47,7 @@ def make_weights(dr, dt, ad, at):
         dr, dt: i.e. r-mean(r) and d-mean(d)
         ad, at: are the std corresponding to each dimension. actually sigma in the gaussian distribution. 
     return:
-         exponential term in the gaussian function part
+        exponential term in the gaussian function part
     '''
     ed = np.exp(-(dr ** 2)/(2 * ad ** 2))
     et = np.exp(-(dt ** 2)/(2 * at ** 2))
@@ -107,83 +107,39 @@ parser.add_argument(
         default=[0, 0, 9999],)
 
 parser.add_argument(
-        '-v', metavar=('x','y','z','t','s'), dest='vnames', type=str, nargs=5,
+        '-v', metavar=('x','y','z','t'), dest='vnames', type=str, nargs=4,
         help=('name of varibales in the HDF5-file'),
-        default=['lon','lat','h_cor','t_year','h_rms'],)
+        default=['lon','lat','h_cor','t_year'],)
 
 
-def interpgaus3d(xp, yp, time, zp, dx, dy, dt, sp,radius):
-
-    # Find all NaNs and do not select them
-    no_nan = ~np.isnan(zp)
+def interpgaus3d(x, y, t, z, \
+                xi, yi, ti, alpha_d, alpha_t):
+    '''
+    des: 3-d interpolation by using gaussian method
+    '''
+    d_time = np.abs(t - ti)    # time difference from all the points.            
+    d_spat = square_dist(x, y, xi, yi)   # distance from interpolated point.
+    # Compute the weighting factors, larger dist,dt, smaller ed,et
+    # !!!alpha_d, alpha_t are actually the sigma in gaussian distribution function
+    ed, et = make_weights(d_spat, d_time, alpha_d, alpha_t)
+    # Combine weights and scale with error, similar to the joint probability density function
+    w = ed * et            
+    w += 1e-6    # avoid division of zero
+    zi = fwavg(w, z)     #  weighted mean height
+    sigma_r = fwstd(w, z, zi)    # Compute weighted height std 
+    ei = np.sqrt(sigma_r ** 2)   # prediction error at grid node (interpolated point)
+    ni = len(z)                  # Number of obs. in solution
     
-    # Remove data wiht NaN's
-    xp, yp, zp, tp, sp = xp[no_nan], yp[no_nan], zp[no_nan],\
-                            time[no_nan], sp[no_nan]
-
-    xmin, xmax, ymin, ymax = xp.min(), xp.max(), yp.min(), yp.max()
-    t_start, t_end = time.min(), time.max()
-
-    # Time vector
-    Ti = np.arange(t_start, t_end + dt, dt)
-
-    # Construct the spatial grid: the cross point (Xi, Yi) can be regarded as interpolated point
-    Xi, Yi = make_grid(xmin, xmax, ymin, ymax, dx, dy)
-
-    # Shape of grid
-    Nx, Ny = Xi.shape
-
-    # Length of time vector
-    Nt = len(Ti)
-
-    # Output 3-D vectors: (time, row, col)
-    Zi = np.ones((Nx, Ny, Nt)) * np.nan    # predicted height through the neiboring points in the temporal bin 
-    Ei = np.ones((Nx, Ny, Nt)) * np.nan    # error of the neiboring points in the temporal bin
-    Ni = np.ones((Nx, Ny, Nt)) * np.nan    # number (all time) of the neiboring points
-
-    print("-> creating kdtree ...")
-    # Construct cKDTree
-    tree = cKDTree(np.c_[xp, yp])
-    print('-> interpolating data ...')
-
-    # --- prediction (spatial --> temporal)
-    # Loop trough up-left coords of the generated grid (spatial dimension)
-    for i in range(int(Nx)):   # loop through rows
-        for j in range(int(Ny)):    # loop through cols
-            idx = tree.query_ball_point([Xi[i,j], Yi[i,j]], r=radius)
-            if len(idx) == 0: 
-                continue
-            xt = xp[idx]
-            yt = yp[idx]
-            zt = zp[idx]
-            tt = tp[idx]
-            st = sp[idx]
-
-            for k in range(int(Nt)):   # loop through time 
-                dt = np.abs(tt - Ti[k])   # time interval from the interpolated point.            
-                dist = square_dist(xt, yt, Xi[i,j], Yi[i,j])   # distance from interpolated point.
-                # Compute the weighting factors, larger dist,dt, smaller ed,et
-                # !!!alpha_d, alpha_t are actually the sigma in gaussian distribution function
-                ed, et = make_weights(dist, dt, alpha_d, alpha_t)
-                # Combine weights and scale with error, similar to the joint probability density function
-                w = (1. / st ** 2) * ed * et            
-                w += 1e-6    # avoid division of zero
-                zi = fwavg(w, zt)     #  weighted mean height
-                # Test for signular values 
-                if np.abs(zi) < 1e-6: 
-                    continue
-                sigma_r = fwstd(w, zt, zi)    # Compute weighted height std 
-                sigma_s = 0 if np.all(st == 1) else np.nanmean(st)  # Compute systematic error
-                ei = np.sqrt(sigma_r ** 2 + sigma_s ** 2)   # prediction error at grid node (interpolated point)
-                ni = len(zt)        #  Number of obs. in solution
-                ## Save data to output (interpolated point: (k,i,j) )
-                Zi[i,j,k] = zi    # interpolated height
-                Ei[i,j,k] = ei    # interpolated error
-                Ni[i,j,k] = ni    # number of points in the interpolation.
-    return Xi, Yi, Ti, Zi, Ei, Ni
+    return zi, ei, ni
 
 
 if __name__ == '__main__':
+    '''
+    des: 
+        1. spatial filtering for the points;
+        2.remote the nan values; 
+        3. interpolation of the generated grid cross points.
+    '''
 
     # Parser argument to variable
     args = parser.parse_args()
@@ -210,17 +166,14 @@ if __name__ == '__main__':
 
     print("-> reading data ...")
     # Get variable names
-    xvar, yvar, zvar, tvar, svar = vicol
+    xvar, yvar, zvar, tvar = vicol
     # Load all 1d variables needed
     with h5py.File(ifile, 'r') as fi:
-
         # Get variables and sub-sample if needed
         lon = fi[xvar][::nsam]
         lat = fi[yvar][::nsam]
         zp  = fi[zvar][::nsam]
         tp  = fi[tvar][::nsam]
-        sp  = fi[svar][::nsam] if svar in fi else np.ones(lon.shape)
-
     xp, yp = coor2coor('4326', proj, lon, lat) # from geo-coords to projection-coords
 
     # Check if we should filter
@@ -229,13 +182,58 @@ if __name__ == '__main__':
         # Global filtering before cleaning 
         i_o = np.abs(zp) < filter_vmax
         # Remove all NaNs 
-        xp, yp, zp, tp, sp = xp[i_o], yp[i_o], zp[i_o], tp[i_o], sp[i_o]
+        xp, yp, zp, tp = xp[i_o], yp[i_o], zp[i_o], tp[i_o]
         # Filter the data in the spatial domain
         zp = spatial_filter(xp.copy(), yp.copy(), zp.copy(), filter_dxy, filter_dxy, sigma=filter_thres)
 
+    # Find all NaNs and do not select them
+    no_nan = ~np.isnan(zp)
+    # Remove data wiht NaN's
+    xp, yp, zp, tp = xp[no_nan], yp[no_nan], zp[no_nan], tp[no_nan]
 
-    Xi, Yi, Ti, Zi, Ei, Ni = interpgaus3d(xp, yp, time=tp, zp=zp, dx=dx, 
-                                            dy=dy, dt=dt, sp=sp, radius=radius)
+    xmin, xmax, ymin, ymax = xp.min(), xp.max(), yp.min(), yp.max()
+    t_start, t_end = tp.min(), tp.max()
+
+    # Time vector
+    Ti = np.arange(t_start, t_end + dt, dt)
+    # Construct the spatial grid: the cross point (Xi, Yi) can be regarded as interpolated point
+    Xi, Yi = make_grid(xmin, xmax, ymin, ymax, dx, dy)
+    # Shape of grid
+    Nt = len(Ti)
+    # Shape of grid
+    Nx, Ny = Xi.shape
+
+    # Output 3-D vectors: (row, col, time)
+    Zi = np.ones((Nx, Ny, Nt)) * np.nan    # predicted height through the neiboring points in the temporal bin 
+    Ei = np.ones((Nx, Ny, Nt)) * np.nan    # error of the neiboring points in the temporal bin
+    Ni = np.ones((Nx, Ny, Nt)) * np.nan    # number (all time) of the neiboring points
+
+    print("-> creating kdtree ...")
+    # Construct cKDTree
+    tree = cKDTree(np.c_[xp, yp])
+    print('-> interpolating data ...')
+
+    # --- prediction (spatial --> temporal)
+    # Loop trough up-left coords of the generated grid (spatial dimension)
+    for i in range(int(Nx)):   # loop through rows
+        for j in range(int(Ny)):    # loop through cols
+            idx = tree.query_ball_point([Xi[i,j], Yi[i,j]], r=radius)
+            if len(idx) == 0: 
+                continue
+            x_local = xp[idx]
+            y_local = yp[idx]
+            z_local = zp[idx]
+            t_local = tp[idx]
+            for k in range(int(Nt)):   # loop through time 
+                zi, ei, ni = interpgaus3d(x=x_local, y=y_local, t=t_local, z=z_local, \
+                                          xi=Xi[i,j], yi=Yi[i,j], ti=Ti[k], alpha_d=alpha_d, alpha_t=alpha_t)
+                # Test for signular values 
+                if np.abs(zi) < 1e-6: 
+                    continue
+                ## Save data to output (interpolated point: (k,i,j) )
+                Zi[i,j,k] = zi    # interpolated height
+                Ei[i,j,k] = ei    # interpolated error
+                Ni[i,j,k] = ni    # number of points in the interpolation.
 
     print('-> saving predictions to file...')
 
@@ -243,7 +241,7 @@ if __name__ == '__main__':
     with h5py.File(ofile, 'w') as foo:
         foo['X'] = Xi        #  X, 2-d array, is the projected coord_x with resolution dx
         foo['Y'] = Yi        #  Y, 2-d array, is the projected coord_y with resolution dy
-        foo['time'] = Ti     # ti, 1-d array, times series with resolution of tres
+        foo['time'] = Ti     #  ti, 1-d array, times series with resolution of tres
         foo['Z_interp'] = Zi
         foo['Z_rmse'] = Ei
         foo['Z_nobs'] = Ni
