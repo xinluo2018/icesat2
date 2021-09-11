@@ -29,12 +29,9 @@ import h5py
 import argparse
 import warnings
 from datetime import datetime
-from scipy.spatial import cKDTree
 from helper import intersect, get_bboxs_id
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.interpolate import InterpolatedUnivariateSpline
-import time
-
 
 # Ignore all warnings
 warnings.filterwarnings("ignore")
@@ -52,6 +49,10 @@ def get_args():
             help='name of output file (HDF5)',
             default=[None])
     parser.add_argument(
+            '-r', metavar=('radius'), dest='radius', type=float, nargs=1,
+            help='maximum interpolation distance from crossing location (m)',
+            default=[350],)
+    parser.add_argument(
             '-p', metavar=('epsg_num'), dest='proj', type=str, nargs=1,
             help=('projection: EPSG number (AnIS=3031, GrIS=3413)'),
             default=['4326'],)
@@ -67,6 +68,10 @@ def get_args():
             '-bf', metavar=('buffer'), dest='buff', type=int, nargs=1,
             help=('region buffer (km)'),
             default=[0],)
+    parser.add_argument(
+            '-m', metavar=None, dest='mode', type=str, nargs=1,
+            help='interpolation method, "linear" or "cubic"',
+            choices=('linear', 'cubic'), default=['linear'],)
     parser.add_argument(
             '-v', metavar=('spot','x','y','t','h'), dest='vnames', type=str, nargs=5,
             help=('main vars: names if HDF5, spot/lon/lat/time/height'),
@@ -86,7 +91,6 @@ def interp1d(x, y, xi, n = 1):
     Fi = InterpolatedUnivariateSpline(x, y, k=n)  # create interpolator
     yi = Fi(xi)     # interpolated value
     return yi
-
 
 def tile_num(fname):
     """ extract tile number from file name. """
@@ -132,7 +136,7 @@ def coor2coor(srs_from, srs_to, x, y):
 
 def xover(lon_as, lat_as, time_as, height_as, spot_as, 
             lon_des, lat_des, time_des, height_des, spot_des, 
-            nres, proj, tile_dxy=10000, buff=1):
+            nres, proj, radius_interp, tile_dxy=10, buff=1, mode_interp = 'linear'):
     """ 
     des: find and compute crossover values. 
     arg:
@@ -166,15 +170,15 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
     ymin = max(np.nanmin(y_as), np.nanmin(y_des))
     ymax = min(np.nanmax(y_as), np.nanmax(y_des))
 
-    # # Interpolation type and number of needed points
-    # if mode_interp == "linear":
-    #     # Linear interpolation
-    #     nobs  = 2
-    #     order = 1
-    # else:
-    #     # Cubic interpolation
-    #     nobs  = 6
-    #     order = 3
+    # Interpolation type and number of needed points
+    if mode_interp == "linear":
+        # Linear interpolation
+        nobs  = 2
+        order = 1
+    else:
+        # Cubic interpolation
+        nobs  = 6
+        order = 3
 
     print('tileing asc/des data...') 
     # get binned boxes index (bin indices corresponding to each (x,y))
@@ -196,21 +200,21 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
     # loop through each unique bin (tile)
     # k is the unique bin index.
     for k in ibox:        
-        ibox_as, = np.where(id_bboxs_as == k)    # idx_ is the data points index
-        ibox_des, = np.where(id_bboxs_des == k)
+        idx_as, = np.where(id_bboxs_as == k)    # idx_ is the data points index
+        idx_des, = np.where(id_bboxs_des == k)
         # Extract points in the bin
         # ascending orbit
-        spot_as_ibox = spot_as[ibox_as]
-        x_as_ibox = x_as[ibox_as]
-        y_as_ibox = y_as[ibox_as]
-        h_as_ibox = height_as[ibox_as]
-        t_as_ibox = time_as[ibox_as]
+        spot_as_ibox = spot_as[idx_as]
+        x_as_ibox = x_as[idx_as]
+        y_as_ibox = y_as[idx_as]
+        h_as_ibox = height_as[idx_as]
+        t_as_ibox = time_as[idx_as]
         # descending orbit        
-        spot_des_ibox = spot_des[ibox_des]   
-        x_des_ibox = x_des[ibox_des]
-        y_des_ibox = y_des[ibox_des]
-        h_des_ibox = height_des[ibox_des]
-        t_des_ibox = time_des[ibox_des]
+        spot_des_ibox = spot_des[idx_des]   
+        x_des_ibox = x_des[idx_des]
+        y_des_ibox = y_des[idx_des]
+        h_des_ibox = height_des[idx_des]
+        t_des_ibox = time_des[idx_des]
 
         # get unique tracks
         spot_as_ibox_unique = np.unique(spot_as_ibox)
@@ -223,9 +227,9 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
 
         # ---- loop through tracks (ground track in the specific bin) 
         # --> ascending tracks
-        for ispot_as_ibox in spot_as_ibox_unique:
+        for spot_as_ibox_i in spot_as_ibox_unique:
             ## i_trk_: point index of the specific groud track.
-            i_as_spot = spot_as_ibox == ispot_as_ibox 
+            i_as_spot = spot_as_ibox == spot_as_ibox_i 
             ## extract points from the specific orbit (a specific track)
             x_as_ispot = x_as_ibox[i_as_spot]
             y_as_ispot = y_as_ibox[i_as_spot]
@@ -234,9 +238,9 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
             
             # Loop through groud tracks (1-6) in specific bin 
             # --> descending tracks
-            for ispot_des_ibox in spot_des_ibox_unique:
+            for spot_des_ibox_i in spot_des_ibox_unique:
                 # index of data points of specific track in file 2
-                i_des_spot = spot_des_ibox == ispot_des_ibox
+                i_des_spot = spot_des_ibox == spot_des_ibox_i
                 # extract points from a specific orbit (groud track)
                 x_des_ispot = x_des_ibox[i_des_spot]
                 y_des_ispot = y_des_ibox[i_des_spot]
@@ -248,43 +252,88 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
                     continue
 
                 # exact crossing points between two tracks of ascending/descending files.
-                xi, yi, ti_as, ti_des = intersect(x_as_ispot[::nres], y_as_ispot[::nres], \
-                                            x_des_ispot[::nres], y_des_ispot[::nres], \
-                                            t_as_ispot[::nres], t_des_ispot[::nres])
+                cxy_main = intersect(x_as_ispot[::nres], y_as_ispot[::nres], \
+                                     x_des_ispot[::nres], y_des_ispot[::nres])
 
                 # test again for crossing
-                if len(xi) == 0: continue
+                if len(cxy_main) == 0: continue
                 """
                     SUPPORT SHOULD BE ADDED FOR MULTIPLE CROSSOVERS FOR SAME TRACK!
                     below are only consider the first crossover point in this program.
                 """
-                xi, yi, ti_as, ti_des = xi[0], yi[0], ti_as[0], ti_des[0]
-                ## get the neighboring points indices.
-                dt_as = t_as_ispot - ti_as
-                dt_des = t_des_ispot - ti_des
+                # coordinates of crossing points, !!!only one crossover point is extracted.
+                xi = cxy_main[0][0]
+                yi = cxy_main[0][1]
+                
+                # # Get start coordinates of the specific track in the specific bin
+                # x0_as = x_as[0]
+                # y0_as = y_as[0]
+                # x0_des = x_des[0]
+                # y0_des = y_des[0]
 
-                # idx_as_pre = np.where(dt_as<=0)[0][-1]
-                # idx_des_pre = np.where(dt_des<=0)[0][-1]
-                idx_as_pre = np.argwhere(dt_as<=0).flatten()[-1]
-                idx_des_pre = np.argwhere(dt_des<=0).flatten()[-1]
+                ## -- sort the points by distance from xover point.
+                # distance between points (x,y) and crossing point in the bin
+                d_as_i = (x_as_ispot - xi) * (x_as_ispot - xi) + (y_as_ispot - yi) * (y_as_ispot - yi)
+                d_des_i = (x_des_ispot - xi) * (x_des_ispot - xi) + (y_des_ispot - yi) * (y_des_ispot - yi)
 
-                ## -- calculate the distance from xover
-                d0_as = np.sqrt(np.square(x_as_ispot[idx_as_pre+1]-x_as_ispot[idx_as_pre]) + \
-                                            np.square(y_as_ispot[idx_as_pre+1]-y_as_ispot[idx_as_pre]))
-                di_as = np.sqrt(np.square(xi - x_as_ispot[idx_as_pre]) + \
-                                            np.square(yi - y_as_ispot[idx_as_pre]))
-                d0_des = np.sqrt(np.square(x_des_ispot[idx_des_pre+1]-x_des_ispot[idx_des_pre]) + \
-                                            np.square(y_des_ispot[idx_des_pre+1]-y_des_ispot[idx_des_pre]))
-                di_des = np.sqrt(np.square(xi - x_des_ispot[idx_des_pre]) + \
-                                            np.square(yi - y_des_ispot[idx_des_pre]))
+                # sorted by distance (small->large)
+                isort_d_as = np.argsort(d_as_i)    # isort_d_as is the index of sorted points.
+                isort_d_des = np.argsort(d_des_i)
 
-                ## height interpolation (linear)
-                hi_as = h_as_ispot[idx_as_pre] + (di_as/d0_as)*(h_as_ispot[idx_as_pre+1]-h_as_ispot[idx_as_pre])
-                hi_des = h_des_ispot[idx_des_pre] + (di_des/d0_des)*(h_des_ispot[idx_des_pre+1]-h_des_ispot[idx_des_pre])
+                # sort arrays - A (small->large)
+                x_as_ispot = x_as_ispot[isort_d_as]
+                y_as_ispot = y_as_ispot[isort_d_as]
+                t_as_ispot = t_as_ispot[isort_d_as]
+                h_as_ispot = h_as_ispot[isort_d_as]
+                d_as_i = d_as_i[isort_d_as]
 
+                # sort arrays - B
+                x_des_ispot = x_des_ispot[isort_d_des]
+                y_des_ispot = y_des_ispot[isort_d_des]
+                t_des_ispot = t_des_ispot[isort_d_des]
+                h_des_ispot = h_des_ispot[isort_d_des]
+                d_des_i = d_des_i[isort_d_des]
+                
+                # Get distance^2 for two nearest points from ascending and descending track, respectively.
+                # d_as[[0,1]] return list: [d_as[0],d_as[1]]
+                dd_as_des = np.vstack((d_as_i[[0, 1]], d_des_i[[0, 1]]))
+
+                ## Test if any point is too farther than the given radius
+                if np.any(np.sqrt(dd_as_des) > radius_interp):
+                    continue
+                
+                # Test if enough obs. are available for interpolation
+                elif (len(x_as_ispot) < nobs) or (len(x_des_ispot) < nobs):
+                    continue
+                else:
+                    pass
+                
+                ### -- interpolation of the xover point by nearest points.
+                # distances between sorted points (x,y) and track start point
+                d_as_0 = (x_as_ispot - x_as_ispot[0]) * (x_as_ispot - x_as_ispot[0]) \
+                                        + (y_as_ispot- y_as_ispot[0]) * (y_as_ispot - y_as_ispot[0])
+                d_des_0 = (x_des_ispot-x_des_ispot[0]) * (x_des_ispot-x_des_ispot[0]) \
+                                        + (y_des_ispot-y_des_ispot[0]) * (y_des_ispot-y_des_ispot[0])
+
+                # distance between track start point and cross point
+                d_as0_i = (xi - x_as_ispot[0]) * (xi - x_as_ispot[0]) + \
+                                            (yi - y_as_ispot[0]) * (yi - y_as_ispot[0])
+                d_des0_i = (xi - x_des_ispot[0]) * (xi - x_des_ispot[0]) + \
+                                            (yi - y_des_ispot[0]) * (yi - y_des_ispot[0])
+                
+                ##### ----- height interpolation: using the nearest nobs(number) points.
+                # params: distances, heights, interpolated distance, interpolation order.
+                h_ai = interp1d(d_as_0[0:nobs], h_as_ispot[0:nobs], d_as0_i, order)
+                h_di = interp1d(d_des_0[0:nobs], h_des_ispot[0:nobs], d_des0_i, order)
+                
+                ##### ----- time interpolation: using the nearest nobs(number) points.
+                # x: distance, y: time -> given interploated distance
+                t_ai = interp1d(d_as_0[0:nobs], t_as_ispot[0:nobs], d_as0_i, order)
+                t_di = interp1d(d_des_0[0:nobs], t_des_ispot[0:nobs], d_des0_i, order)
+                
                 # Test interpolate time values
-                if (ti_as > tmax) or (ti_as < tmin) or \
-                    (ti_des > tmax) or (ti_des < tmin):
+                if (t_ai > tmax) or (t_ai < tmin) or \
+                    (t_di > tmax) or (t_di < tmin):
                     continue
                 
                 # Create output array
@@ -293,36 +342,39 @@ def xover(lon_as, lat_as, time_as, height_as, spot_as,
                 # Compute differences and save parameters
                 out_i[0]  = xi             # crossover points coord_x
                 out_i[1]  = yi             # ... coord_y
-                out_i[2]  = hi_as           # interpolated height by ascending track
-                out_i[3]  = hi_des           # interpolated height by descending track
-                out_i[4]  = ti_as           # interpolated time by ascending track
-                out_i[5]  = ti_des           # interpolated time by descending track
-                out_i[6] = ispot_as_ibox      # groud track of ascending file
-                out_i[7] = ispot_des_ibox     # groud track of decending file
-                out_i[8]  = hi_as - hi_des    ## height difference between ascending and descending interpolations
-                out_i[9]  = ti_as - ti_des    ## time difference between ...        
+                out_i[2]  = h_ai           # interpolated height by ascending track
+                out_i[3]  = h_di           # interpolated height by descending track
+                out_i[4]  = t_ai           # interpolated time by ascending track
+                out_i[5]  = t_di           # interpolated time by descending track
+                out_i[6] = spot_as_ibox_i      # groud track of ascending file
+                out_i[7] = spot_des_ibox_i     # groud track of decending file
+                out_i[8]  = h_ai - h_di    ## height difference between ascending and descending interpolations
+                out_i[9]  = t_ai - t_di    ## time difference between ...
+                        
                 # Add to list
                 out.append(out_i)
 
-
         num_box += 1
+
+
     # Change back to numpy array
     out = np.asarray(out)
+
     # Remove invalid rows
     out = out[~np.isnan(out[:,2]), :]     # out[:,2]: height difference
+
     # Test if output container is empty 
     if len(out) == 0:
         print('no crossovers found!')
         return 
     # remove the two id columns if they are empty, out[:,-1]: orb_id2，out[:,-2]: orb_id1
-
     out = out[:,:-2] if np.isnan(out[:,-1]).all() else out
     # Transform coords back to lat/lon
     out[:,0], out[:,1] = coor2coor(proj, '4326', out[:,0], out[:,1])
     return out
 
-def xover_main(ifile_as, ifile_des, ofile_,
-                    vnames, tile_dxy, tile=False, buff=0):
+def xover_main(ifile_as, ifile_des, radius_interp, ofile_,
+                    vnames, tile_dxy, tile=False):
     """ 
     des: 
         find and compute crossover values with input file paths. 
@@ -369,7 +421,7 @@ def xover_main(ifile_as, ifile_des, ofile_,
 
     out = xover(lon_as, lat_as, time_as, height_as, spot_as, 
                 lon_des, lat_des, time_des, height_des, spot_des, 
-                nres, proj, tile_dxy=tile_dxy, buff=buff)
+                nres, proj, radius_interp, tile_dxy=tile_dxy, buff=1, mode_interp = 'linear')
 
     # create output file name if not given
     # if no given path_ofile, path_ofile is determined by path_ifile.
@@ -418,10 +470,12 @@ if __name__ == '__main__':
     args   = get_args()
     ifiles = args.input[:]
     ofile_ = args.output[0]
+    radius = args.radius[0]
     proj   = args.proj[0]
     tile_dxy = args.tile_dxy[0]  # if the input data will be tiled in the processing.
     nres = args.nres[0]
     buff   = args.buff[0]
+    mode   = args.mode[0]
     vnames = args.vnames[:]
     tile   = args.tile           # if the input file is tiled 
 
@@ -445,16 +499,16 @@ if __name__ == '__main__':
         # Loop through tiles
         for i in range(len(files_as)):            
             # Run main program
-            xover_main(files_as[i], files_des[i], ofile_=ofile_, \
-                                vnames=vnames, tile_dxy=tile_dxy, tile=tile, buff=buff)
+            xover_main(files_as[i], files_des[i], radius_interp=radius, 
+                        ofile_=ofile_,vnames=vnames, tile_dxy=tile_dxy, tile=tile)
 
     # Run as single files
     else:
         # File names
         file_as, file_des = str_as, str_des
         # Run main program
-        xover_main(file_as, file_des, ofile_=ofile_, \
-                            vnames=vnames, tile_dxy=tile_dxy, tile=False, buff=buff)
+        xover_main(file_as, file_des, radius_interp=radius, 
+                    ofile_=ofile_, vnames=vnames, tile_dxy=tile_dxy, tile=False)
 
 
 

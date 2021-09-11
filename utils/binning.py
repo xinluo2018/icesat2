@@ -1,3 +1,5 @@
+
+
 import numpy as np
 
 def binning_1d(x, y, xmin=None, xmax=None, dx=1 / 12.,

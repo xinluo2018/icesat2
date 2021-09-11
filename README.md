@@ -2,8 +2,6 @@
 Scripts for icesat2 data processing
 
 ### to do
-- fix interps3d and test.
-- complete interps.py
 - reqair xover_.py to select all the xover points.
 
 
