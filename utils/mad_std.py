@@ -9,3 +9,5 @@ def mad_std(x, axis=None):
     :return: std.dev (MAD)
     """
     return 1.4826 * np.nanmedian(np.abs(x - np.nanmedian(x, axis)), axis)
+
+

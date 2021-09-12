@@ -206,7 +206,7 @@ def intersect(x_up, y_up, x_down, y_down, t_up, \
     intersection = np.all((params >= 0) & (params <= 1), axis=(-1, -2)) #
     p0_s = params[intersection, 0, :] * mat[intersection, :, 0]
     xover_coords = p0_s + p0[np.where(intersection)[0]]
-    ## interplate the xover time of down and up tracks respectively.
+    ## interplate the xover time corresponding to down and up tracks, respectively.
     ## -- get the previous point of xover point (down and up, respectively)
     p_start_idx = np.where(intersection)[0]   # down track
     q_start_idx = np.where(intersection)[1]   # up track
@@ -222,7 +222,6 @@ def intersect(x_up, y_up, x_down, y_down, t_up, \
     ## remove unreasonable xover points.
     idx_save = np.argwhere((dt_down<0.0001) & (dt_up<0.0001)).flatten()
     xover_coords, xover_t_down, xover_t_up = xover_coords[idx_save,:], xover_t_down[idx_save], xover_t_up[idx_save]
-
     ## -- get the interpolated height
     if z_down is None:
         return xover_coords[:,0], xover_coords[:,1], xover_t_up, xover_t_down
@@ -230,7 +229,6 @@ def intersect(x_up, y_up, x_down, y_down, t_up, \
         xover_z_down = z_down[p_start_idx] + (z_down[p_start_idx+1]-z_down[p_start_idx])*(d_pi/d_p)
         xover_z_up = z_up[q_start_idx] + (z_up[q_start_idx+1]-z_up[q_start_idx])*(d_qi/d_q)
         return xover_coords[:,0], xover_coords[:,1], xover_t_up, xover_t_down, xover_z_up, xover_z_down
-
 
 
 
