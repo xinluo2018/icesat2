@@ -1,6 +1,7 @@
 ## author: Fernando Paolo
 ## modify: xin luo, 2021.8.3
 
+
 """
 des: convert 3-d points to data cube by using spatial-temporal gaussian
     interpolation.
@@ -18,49 +19,7 @@ import pyproj
 from scipy import stats
 from scipy.spatial import cKDTree
 from numba import jit
-from helper import make_grid, spatial_filter
 
-
-def coor2coor(srs_from, srs_to, x, y):
-    """
-    from utils/transform_xy.py
-    """
-    srs_from = pyproj.Proj(int(srs_from))
-    srs_to = pyproj.Proj(int(srs_to))
-    return pyproj.transform(srs_from, srs_to, x, y, always_xy=True)
-
-
-@jit(nopython=True)
-def fwavg(w, z):
-    '''des: weighted mean z'''
-    return np.nansum(w*z)/np.nansum(w)
-
-@jit(nopython=True)
-def fwstd(w, z, zm):
-    return np.nansum(w*(z-zm)**2)/np.nansum(w)
-
-@jit(nopython=True)
-def make_weights(dr, dt, ad, at):
-    '''
-    des: generated key params for gaussian weighting.
-    arg: 
-        dr, dt: i.e. r-mean(r) and d-mean(d)
-        ad, at: are the std corresponding to each dimension. actually sigma in the gaussian distribution. 
-    return:
-        exponential term in the gaussian function part
-    '''
-    ed = np.exp(-(dr ** 2)/(2 * ad ** 2))
-    et = np.exp(-(dt ** 2)/(2 * at ** 2))
-    return ed, et
-
-@jit(nopython=True)
-def square_dist(x, y, xi, yi):
-    '''arg: x,y are the coords of the neighboring points, and xi, yi are the center point'''
-    return np.sqrt((x - xi)**2 + (y - yi)**2)
-
-@jit(nopython=True)
-def fast_sort(x):
-    return np.argsort(x)     # return the index 
 
 # Description of algorithm
 des = 'Spatio-temporal interpolation of irregular data'
@@ -112,6 +71,98 @@ parser.add_argument(
         default=['lon','lat','h_cor','t_year'],)
 
 
+def make_grid(xmin, xmax, ymin, ymax, dx, dy):
+    """des: construct output grid-coordinates.
+        arg:
+            xmin,xmax,ymin,ymax: the range of x and y.
+            dx,dy: the resolution in terms of x and y.
+        return:
+            x, y: np.array, shape equals the generated grid shape
+    """
+    # Setup grid dimensions
+    Nn = int((np.abs(ymax - ymin)) / dy) + 1    # row
+    Ne = int((np.abs(xmax - xmin)) / dx) + 1    # col
+    # Initiate x/y vectors for grid
+    x_i = np.linspace(xmin, xmax, num=Ne)       # image coordinate
+    y_i = np.linspace(ymin, ymax, num=Nn)
+    return np.meshgrid(x_i, y_i, indexing='xy')
+
+
+def spatial_filter(x, y, z, dx, dy, sigma=3.0):
+    """
+    des: outlier filtering within the defined spatial region (dx * dy). 
+    arg:
+        x, y: coord_x and coord_y (m)
+        z: value
+        dx, dy: resolution in x (m) and y (m)
+        n_sigma: cut-off value
+        thres: max absolute value of data
+    return: 
+        zo: filtered z, containing nan-values
+    """
+
+    Nn = int((np.abs(y.max() - y.min())) / dy) + 1
+    Ne = int((np.abs(x.max() - x.min())) / dx) + 1
+
+    f_bin = stats.binned_statistic_2d(x, y, z, bins=(Ne, Nn))
+    index = f_bin.binnumber   # the bin index of each (x,y)
+    ind = np.unique(index)
+    zo = z.copy()
+    # loop for each bin (valid data exit)
+    for i in range(len(ind)):
+        # index: bin index corresponding to each data point
+        idx, = np.where(index == ind[i])   # idx:  data points indices in specific bin
+        zb = z[idx]
+        if len(zb[~np.isnan(zb)]) == 0:
+            continue
+        dh = zb - np.nanmedian(zb)
+        foo = np.abs(dh) > sigma * np.nanstd(dh)
+        zb[foo] = np.nan
+        zo[idx] = zb
+
+    return zo
+
+
+def coor2coor(srs_from, srs_to, x, y):
+    """
+    from utils/transform_xy.py
+    """
+    srs_from = pyproj.Proj(int(srs_from))
+    srs_to = pyproj.Proj(int(srs_to))
+    return pyproj.transform(srs_from, srs_to, x, y, always_xy=True)
+
+@jit(nopython=True)
+def fwavg(w, z):
+    '''des: weighted mean z'''
+    return np.nansum(w*z)/np.nansum(w)
+
+@jit(nopython=True)
+def fwstd(w, z, zm):
+    return np.nansum(w*(z-zm)**2)/np.nansum(w)
+
+@jit(nopython=True)
+def make_weights(dr, dt, ad, at):
+    '''
+    des: generated key params for gaussian weighting.
+    arg: 
+        dr, dt: i.e. r-mean(r) and d-mean(d)
+        ad, at: are the std corresponding to each dimension. actually sigma in the gaussian distribution. 
+    return:
+        exponential term in the gaussian function part
+    '''
+    ed = np.exp(-(dr ** 2)/(2 * ad ** 2))
+    et = np.exp(-(dt ** 2)/(2 * at ** 2))
+    return ed, et
+
+@jit(nopython=True)
+def square_dist(x, y, xi, yi):
+    '''arg: x,y are the coords of the neighboring points, and xi, yi are the center point'''
+    return np.sqrt((x - xi)**2 + (y - yi)**2)
+
+@jit(nopython=True)
+def fast_sort(x):
+    return np.argsort(x)     # return the index 
+
 def interpgaus3d(x, y, t, z, \
                 xi, yi, ti, alpha_d, alpha_t):
     '''
@@ -129,7 +180,6 @@ def interpgaus3d(x, y, t, z, \
     sigma_r = fwstd(w, z, zi)    # Compute weighted height std 
     ei = np.sqrt(sigma_r ** 2)   # prediction error at grid node (interpolated point)
     ni = len(z)                  # Number of obs. in solution
-    
     return zi, ei, ni
 
 

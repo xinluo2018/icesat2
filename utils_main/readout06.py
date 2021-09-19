@@ -12,7 +12,7 @@ import os
 import h5py
 import numpy as np
 import argparse
-from helper import gps2dyr, orbit_type
+from astropy.time import Time
 
 
 def get_args():
@@ -32,7 +32,45 @@ def get_args():
             default=[1])
     return parser.parse_args()
 
-def readout_atl06(file_in, dir_out):
+def gps2dyr(time):
+    """
+    des: 
+        converte from GPS time to decimal years. 
+    """
+    time = Time(time, format="gps")
+    time = Time(time, format="decimalyear").value
+    return time
+
+def orbit_type(time, lat):
+    """
+    des: determines ascending and descending tracks
+         through testing whether lat increases when time increases.
+    arg:
+        time, lat: time and latitute of the pohton points.
+    return:
+        i_asc, i_des: track of the photon points, 1-d data consist of True/Talse. 
+    """
+    tracks = np.zeros(lat.shape)
+    # set track values, !!argmax: the potential turn point of the track
+    tracks[0: np.argmax(np.abs(lat))] = 1
+    i_asc = np.zeros(tracks.shape, dtype=bool)
+
+    # loop through unique tracks: [0]/[1]/[0,1]
+    for track in np.unique(tracks):
+        (i_track,) = np.where(track == tracks)
+        if len(i_track) < 2:  # number of photon points of specific track i 
+            continue
+        i_time_min, i_time_max  = time[i_track].argmin(), time[i_track].argmax()
+        lat_diff = lat[i_track][i_time_max] - lat[i_track][i_time_min]
+        # Determine track type
+        if lat_diff > 0:
+            i_asc[i_track] = True
+    return i_asc, np.invert(i_asc)
+
+
+
+
+def readout06(file_in, dir_out):
     ''' 
     des: 
         split icesat2 atl06 data by ground tracks/spots and orbits.
@@ -48,7 +86,7 @@ def readout_atl06(file_in, dir_out):
         splitted icesat2 atl06 data: splitted by spots/beams and orbits (ascending/descending) 
     '''
  
-    group = ["./gt1l", "./gt1r", "./gt2l", "./gt2r", "./gt3l", "./gt3r"]
+    group = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
 
     ## loop for groups
     for k in range(len(group)):
@@ -95,7 +133,7 @@ def readout_atl06(file_in, dir_out):
         (i_asc, i_des) = orbit_type(t_li, lat)    #  track type (asc/des)        
         name, ext = os.path.splitext(os.path.basename(file_in))
         file_out = os.path.join(
-            dir_out, name + "_" + group[k][2:] + "_spot" + spot_number + ext
+            dir_out, name + "_" + group[k] + "_spot" + spot_number + ext
             )
         #------------------------------------------#
         # 3) Writting out the selected data        #
@@ -143,12 +181,12 @@ if __name__ == '__main__':
 
     if njobs == 1:
         print("running in serial ...")
-        [readout_atl06(f, dir_out) for f in ifiles]
+        [readout06(f, dir_out) for f in ifiles]
     else:
         print(("running in parallel (%d jobs) ..." % njobs))
         from joblib import Parallel, delayed
         Parallel(n_jobs=njobs, verbose=5)(
-                delayed(readout_atl06)(f, dir_out) for f in ifiles)
+                delayed(readout06)(f, dir_out) for f in ifiles)
 
 
 

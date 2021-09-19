@@ -14,6 +14,8 @@ notes
 """
 
 import warnings
+
+from numpy.core.fromnumeric import compress
 warnings.filterwarnings("ignore")
 import os
 import h5py
@@ -129,25 +131,27 @@ def merge(ifiles, ofile, vnames, comp):
     # Get length of output containers (from all input files)
     print('Calculating lenght of output from all input files ...')
     N = get_total_len(ifiles)   # 
-    with h5py.File(ofile, 'w') as f:
 
-        # Create empty output containers (w/compression optimized for speed)
-        [f.create_dataset(key, (N,), dtype='float64', compression=comp)
-            for key in vnames]
+    with h5py.File(ofile, 'w') as out_f, h5py.File(ifiles[0], 'r') as in_f_0:
+        for key in vnames:
+            shape_var = in_f_0[key][:].shape
+            if len(shape_var) == 1:                        
+                out_f.create_dataset(key, (N,), dtype=None, compression=comp)
+            else:
+                # out_f.create_dataset(key, (N, shape_var[1]), dtype='float32', compression=comp)
+                out_f.create_dataset(key, (N, shape_var[1]), dtype=None, compression=comp)
 
         # Iterate over the input files
-        k1 = 0
-        for ifile in ifiles:
-            print(('reading', ifile))
-            # Write next chunk (the input file)
-            with h5py.File(ifile, 'r') as f2:
-                k2 = k1 + list(f2.values())[0].shape[0]  # k1,k2: the location of the var in the merged file
+            k1 = 0
+            for ifile in ifiles:
+                print(('reading', ifile))
+                # Write next chunk (the input file)
+                with h5py.File(ifile, 'r') as f2:
+                    k2 = k1 + list(f2.values())[0].shape[0]  # k1, k2: the location of the var in the merged file
+                    # Iterate over all variables
+                    out_f[key][k1:k2] = f2[key][:]
 
-                # Iterate over all variables
-                for key in vnames:
-                    f[key][k1:k2] = f2[key][:]
-
-            k1 = k2
+                k1 = k2
     
     print(('merged', len(ifiles), 'files'))
     print(('output ->', ofile))

@@ -29,7 +29,7 @@ def get_args():
             default=[None,None,None,None],)
     parser.add_argument(
             '-d', metavar=('dxy'), dest='dxy', type=float, nargs=1,
-            help=('block size of tile (km)'),
+            help=('tile size (km)'),
             default=[], required=True)
     parser.add_argument(
             '-r', metavar=('buffer'), dest='bf', type=float, nargs=1,
@@ -111,6 +111,7 @@ def get_tile_data(ifile, x, y, bbox, buff=1, proj='3031', tile_num=0):
     args:
         buff: unit is meter. 
     """
+
     xmin, xmax, ymin, ymax = bbox   # given region
 
     suffix = ('_buff_%g_epsg_%s_tile_%03d' % (buff, proj, tile_num))
@@ -118,9 +119,9 @@ def get_tile_data(ifile, x, y, bbox, buff=1, proj='3031', tile_num=0):
 
     with h5py.File(ifile, 'r') as fi:
         vnames = list(fi.keys())
-        vars = [fi[vname][:] for vname in vnames ]
+        vars = [fi[key][:] for key in vnames ]
 
-    out = [[] for vname in vnames]
+    out = [[] for key in vnames]
     out = dict(zip(vnames, out))
     npts = 0             # conunt of the written points
     nrow = x.shape[0]
@@ -142,17 +143,24 @@ def get_tile_data(ifile, x, y, bbox, buff=1, proj='3031', tile_num=0):
         vars_chunk = [d[i:k] for d in vars]         # -> obtain the points in the chunk
         vars_chunk_region = [d[idx] for d in vars_chunk]   # -> obtain the points in the given region
         # Save chunk
-        for (i, vname) in enumerate(vnames):
-            out[vname] = out[vname] + list(vars_chunk_region[i])
+        for (i, key) in enumerate(vnames):
+            out[key] = out[key] + list(vars_chunk_region[i])
         npts += vars_chunk_region[0].shape[0]
 
     if npts != 0: 
-        with h5py.File(ofile, 'w') as fo:
-            [fo.create_dataset(name = vname, shape = (npts,), dtype='float64')
-                        for vname in vnames]
-            for vname in vnames:
-                fo[vname][:] = out[vname]
+
+        with h5py.File(ofile, 'w') as out_f, h5py.File(ifile, 'r') as in_f:
+            for key in vnames:
+                shape_var = in_f[key][:].shape
+                if len(shape_var) == 1:                        
+                    out_f.create_dataset(key, (npts,), dtype='float32')
+                    out_f[key][:] = out[key]
+                else:
+                    out_f.create_dataset(key, (npts, shape_var[1]), dtype='float32')
+                    out_f[key][:] = out[key]
+
         print(('tile %03d: #points' % tile_num, npts, '...'))
+
 
 def count_files(ifiles, key='*tile*'):
     saved = []
@@ -193,6 +201,7 @@ if __name__ == '__main__':
         bbox_ = [xmin, xmax, ymin, ymax]
 
     bboxs = get_tile_bboxs(bbox_, dxy)                                        # [b1, b2..]
+
     fxys = [(f,x,y) for f, (x,y) in zip(ifiles, xys)]                         # [(f1,x1,y1), (f2,x2,y2)..]
     fxybs = [(f,x,y,b,n+1) for (f,x,y) in fxys for n, b in enumerate(bboxs)]  # [(f1,x1,y1,b1,1), (f1,x1,y1,b2,2)..]
 

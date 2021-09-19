@@ -12,7 +12,6 @@ example:
 
 import os
 import h5py 
-import pyproj
 import argparse
 import numpy as np
 from glob import glob

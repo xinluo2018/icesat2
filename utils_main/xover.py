@@ -27,7 +27,7 @@ import pyproj
 import h5py
 import argparse
 import warnings
-from helper import intersect, get_bboxs_id
+from scipy import stats
 
 
 # Ignore all warnings
@@ -69,8 +69,96 @@ def get_args():
             '-f', dest='tile', action='store_true',
             help=('run in tile mode'),
             default=False)
-            
+
     return parser.parse_args()
+
+
+def intersect(x_up, y_up, x_down, y_down, t_up, \
+                                t_down, z_up =None, z_down=None):
+    """
+    !!! more fast, but difficult to understand, moreover, we add the time and height input
+    reference: 
+        https://stackoverflow.com/questions/17928452/
+        find-all-intersections-of-xy-data-point-graph-with-numpy
+    des: Find orbit crossover locations through solving the equation: 
+        p0 + s*(p1-p0) = q0 + t*(q1-q0); p and q are descending and ascending points respectively.
+        ---> s*(p1-p0)-t*(q1-q0) = q0-p0
+        if s and t belong to [0,1], p and q actually do intersect.
+        !! in order to speed up calculation, this code vectorizing solution of the 2x2 linear systems
+    input:
+        x_down, y_down: coord_x and coord_y of the descending points
+        x_up, y_up: coord_x, coord_y of the ascending points.
+        t_down, t_up: time of down track and up track, respectively.
+        z_down, z_up: height of down track and up track, respectively.
+    retrun:
+          np.array(shape: (n,2)), coordinates (x,y) of the intersection points. 
+          n is number of intersection points
+    """
+    p = np.column_stack((x_down, y_down))   # coords of the descending points
+    q = np.column_stack((x_up, y_up))       # coords of the ascending points
+
+    (p0, p1, q0, q1) = p[:-1], p[1:], q[:-1], q[1:]   # remove first/last row respectively
+    # (num_uppoints, 2) - (num_dpoints, 1, 2), array broadcast, dim: (num_dpoints, num_uppoints, 2)
+    rhs = q0 - p0[:, np.newaxis, :]    
+
+    mat = np.empty((len(p0), len(q0), 2, 2))  # dim: (p_num, q_num, dif((x, y)), orbit(down,up))
+    mat[..., 0] = (p1 - p0)[:, np.newaxis]  # dif (x_down,y_down) between point_down and previous point_down
+    mat[..., 1] = q0 - q1      #  dif (x_up, y_up) between point_up and previous point_up
+    mat_inv = -mat.copy()
+    mat_inv[..., 0, 0] = mat[..., 1, 1]   # exchange between x_dif and y_dif, down and up
+    mat_inv[..., 1, 1] = mat[..., 0, 0]
+
+    det = mat[..., 0, 0] * mat[..., 1, 1] - mat[..., 0, 1] * mat[..., 1, 0]
+    mat_inv /= det[..., np.newaxis, np.newaxis]    # ???
+    params = mat_inv @ rhs[..., np.newaxis]        # 
+    intersection = np.all((params >= 0) & (params <= 1), axis=(-1, -2)) #
+    p0_s = params[intersection, 0, :] * mat[intersection, :, 0]
+    xover_coords = p0_s + p0[np.where(intersection)[0]]
+    ## interplate the xover time corresponding to down and up tracks, respectively.
+    ## -- get the previous point of xover point (down and up, respectively)
+    p_start_idx = np.where(intersection)[0]   # down track
+    q_start_idx = np.where(intersection)[1]   # up track
+    ## -- calculate the distance from xover
+    d_p = np.sqrt(np.sum((p[p_start_idx+1]-p[p_start_idx])*(p[p_start_idx+1]-p[p_start_idx]), axis=1)) 
+    d_pi = np.sqrt(np.sum((xover_coords-p[p_start_idx])*(xover_coords-p[p_start_idx]), axis=1))
+    d_q = np.sqrt(np.sum((q[q_start_idx+1]-q[q_start_idx])*(q[q_start_idx+1]-q[q_start_idx]), axis=1)) 
+    d_qi = np.sqrt(np.sum((xover_coords-q[q_start_idx])*(xover_coords-q[q_start_idx]), axis=1))
+    ## -- get the interpolated time
+    dt_down, dt_up = t_down[p_start_idx+1]-t_down[p_start_idx], t_up[q_start_idx+1]-t_up[q_start_idx]
+    xover_t_down = t_down[p_start_idx] + (dt_down)*(d_pi/d_p)
+    xover_t_up = t_up[q_start_idx] + (dt_up)*(d_qi/d_q)
+    ## remove unreasonable xover points.
+    idx_save = np.argwhere((dt_down<0.0001) & (dt_up<0.0001)).flatten()
+    xover_coords, xover_t_down, xover_t_up = xover_coords[idx_save,:], xover_t_down[idx_save], xover_t_up[idx_save]
+    ## -- get the interpolated height
+    if z_down is None:
+        return xover_coords[:,0], xover_coords[:,1], xover_t_up, xover_t_down
+    else:
+        xover_z_down = z_down[p_start_idx] + (z_down[p_start_idx+1]-z_down[p_start_idx])*(d_pi/d_p)
+        xover_z_up = z_up[q_start_idx] + (z_up[q_start_idx+1]-z_up[q_start_idx])*(d_qi/d_q)
+        return xover_coords[:,0], xover_coords[:,1], xover_t_up, xover_t_down, xover_z_up, xover_z_down
+
+
+def get_bboxs_id(x, y, xmin, xmax, ymin, ymax, dxy, buff):
+    """
+    des: get binn box (bbox) id of each points (x,y).
+    arg:
+        x,y: coordinates of the photon points
+        xmin/xmax/ymin/ymax: must be in grid projection: stereographic (m).
+        dxy: grid-cell size.
+        buff: buffer region, unit is same to x, y
+    return:
+        the index of each points corresponding to the generated bins.  
+    """
+    # Number of tile edges on each dimension
+    Nns = int(np.abs(ymax - ymin) / dxy) + 1
+    New = int(np.abs(xmax - xmin) / dxy) + 1
+    # Coord of tile edges for each dimension
+    xg = np.linspace(xmin-buff, xmax+buff, New)
+    yg = np.linspace(ymin-buff, ymax+buff, Nns)
+    # Indicies for each points
+    bboxs_id = stats.binned_statistic_2d(x, y, np.ones(x.shape), 'count', bins=[xg, yg]).binnumber
+    return bboxs_id
 
 
 def tile_num(fname):
@@ -95,7 +183,7 @@ def match_tiles(str1, str2):
     f2out = []
     # Loop trough files-1
     for file1 in files1:
-        f1 = tile_num(file1)  # Get tile index
+        f1 = tile_num(file1)       # Get tile index
         # Loop trough files-2
         for file2 in files2:
             f2 = tile_num(file2)   # Get tile index
