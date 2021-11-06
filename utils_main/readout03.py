@@ -1,5 +1,6 @@
 # author: xin luo
-# create: 2021.9.15.   
+# create: 2021.9.15.
+# des: read in and write out reorganized atl03 data
 
 
 '''
@@ -100,7 +101,6 @@ def readout03(file_in, dir_out):
                 lon = fi[group[k] + "/heights/lon_ph"][:]
                 h_li = fi[group[k] + "/heights/h_ph"][:]
                 t_dt = fi[group[k] + "/heights/delta_time"][:]
-                quality = fi[group[k] + "/heights/signal_conf_ph"][:]
                 ## dset varibales
                 tref = fi["/ancillary_data/atlas_sdp_gps_epoch"][:]
                 cycle = fi["/orbit_info/cycle_number"][:] * np.ones(len(lat)).astype(np.int8)
@@ -148,7 +148,6 @@ def readout03(file_in, dir_out):
                 fa["beam_type"] = beam_types[i_asc][:]
                 fa["spot"] = spot[i_asc][:]         #  corresponding to each beam.
                 fa["rgt"] = rgt[i_asc][:]
-                fa["quality_summary"] = quality[i_asc][:]
                 ostr = "_A.h5"
             print('written file:', (file_out.replace(".h5", ostr)))
 
@@ -163,7 +162,6 @@ def readout03(file_in, dir_out):
                 fd["beam_type"] = beam_types[i_des][:]
                 fd["spot"] = spot[i_des][:]
                 fd["rgt"] = rgt[i_des][:]
-                fd["quality_summary"] = quality[i_des][:]
                 ostr = "_D.h5"
             print('written file:', (file_out.replace(".h5", ostr)))
         # Update orbit number

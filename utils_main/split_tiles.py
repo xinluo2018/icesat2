@@ -1,6 +1,6 @@
 ## author: Fernando Paolo
 ## modify: xin luo, 2021.8.28
-
+## split file into multiple tiles.
 
 """
 des: split the very-large files into multiple tiles.

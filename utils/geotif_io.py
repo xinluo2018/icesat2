@@ -1,3 +1,7 @@
+## author: xin luo; 
+## create: 2021.9.19; 
+
+
 import numpy as np
 from osgeo import gdal
 from osgeo import osr
@@ -10,8 +14,8 @@ def readTiff(path_in):
         proj info, and dimentions: (row, col, band)
     '''
     RS_Data=gdal.Open(path_in)
-    im_col = RS_Data.RasterXSize  # 
-    im_row = RS_Data.RasterYSize  # 
+    im_col = RS_Data.RasterXSize   # 
+    im_row = RS_Data.RasterYSize   # 
     im_bands =RS_Data.RasterCount  # 
     im_geotrans = RS_Data.GetGeoTransform()  # 
     im_proj = RS_Data.GetProjection()  # 

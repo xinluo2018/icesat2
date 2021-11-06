@@ -1,3 +1,6 @@
+# author: Fernando Paolo, 
+# modify: xin luo, 2021.8.15
+# des: filtering data within 2d space
 
 import numpy as np
 from scipy import stats

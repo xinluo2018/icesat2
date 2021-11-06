@@ -1,6 +1,6 @@
 # author: Fernando Paolo, 
 # modify: xin luo, 2021.8.15
-# des: 
+# des: get pair-wise tiles.
 
 import os
 import glob
